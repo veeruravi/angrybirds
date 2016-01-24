@@ -220,23 +220,30 @@ float D2R(float A)
     return (A*M_PI)/180.0f;
 }
 
-
+float camera_zoom=0;
+double angle_c=10,speed_of_canon_intial=0;
+int a_pressed=0,w_pressed=0,s_pressed=0,d_pressed=0,c_pressed=0;
 VAO *triangle, *circle1, *circle2, *half_circle, *rectangle, *bg_circle, *bg_ground, *bg_left, *bg_bottom, *speed_rect;
 VAO *bg_speed;
-double xmousePos=0,ymousePos=0;
+double xmousePos=0,ymousePos=0,score=0;
 float camera_rotation_angle = 90;
-int left_button_Pressed=0,canon_out=0;//canon_out=1 if it is out of barrel
+int left_button_Pressed=0,right_button_Pressed=0,canon_out=0;//canon_out=1 if it is out of barrel
 double canon_x_position=0,canon_y_position=51,canon_start_time=0,canon_velocity=0,canon_theta=0,radius_of_canon=10;
 double canon_x_initial_position=0,canon_y_initial_position=0,canon_x_velocity=0,canon_y_velocity=0;
 int canon_x_direction=1;
-double width=1500,height=720;
-double coefficient_of_collision_with_walls=0.5,e=0.6;//e for collision
+float width=1500,height=720;
+double coefficient_of_collision_with_walls=0.4,e=0.5;//e for collision
+double friction=0.7;
 double objects[100][16];
-int no_of_objects=11;//when ever u change this change the below line
-VAO *objects_def[11];
+double fixe[10][4],no_of_fixed_objects=6;
+VAO *fixed_object[10];
+double coins[10][4],no_of_coins=2;
+VAO *coins_objects[10];
+int no_of_objects=0;//when ever u change this change the below line
+VAO *objects_def[3];
+double piggy_pos[3][3],no_of_piggy=3,radius_of_piggy=30,no_of_piggy_hit=0;
 double r=1; //coefficient_of_collision
-double walls[2][4],no_of_walls=2;//x,y,length,breadth
-VAO *wall_object[2];
+VAO *piggy_head,*piggy_eye,*piggy_ear,*piggy_big_nose,*piggy_small_nose,*piggy_big_eye,*cloud;
                     /*
                         0 x position
                         1 y position
@@ -256,13 +263,13 @@ VAO *wall_object[2];
                         15 immobile==0
                     */
 
-VAO* createSector(float R,int parts)
+VAO* createSector(float R,int parts,double clr[6][3])
 {
   float diff=360.0f/parts;
   float A1=formatAngle(-diff/2);
   float A2=formatAngle(diff/2);
   GLfloat vertex_buffer_data[]={0.0f,0.0f,0.0f,R*cos(D2R(A1)),R*sin(D2R(A1)),0.0f,R*cos(D2R(A2)),R*sin(D2R(A2)),0.0f};
-  GLfloat color_buffer_data[]={1,0,0,1,0,0,1,0,0};
+  GLfloat color_buffer_data[]={clr[0][0],clr[0][1],clr[0][2],clr[1][0],clr[1][1],clr[1][2],clr[2][0],clr[2][1],clr[2][2]};
   return create3DObject(GL_TRIANGLES,3,vertex_buffer_data,color_buffer_data,GL_FILL);
 }
 VAO* createtriangle()
@@ -305,16 +312,35 @@ VAO* createRectangle(double length, double breadth, double clr[6][3])
   return create3DObject(GL_TRIANGLES, 6, vertex_buffer_data, color_buffer_data, GL_FILL);
 }
 
+void mousescroll(GLFWwindow* window, double xoffset, double yoffset)
+{
+    if (yoffset==-1)
+         camera_zoom+=10;
+     if (yoffset==1)
+        camera_zoom-=10;
+    if (camera_zoom>=50)
+        camera_zoom=50;
+    else if (camera_zoom<0)
+        camera_zoom=0;
+}
 void keyboard (GLFWwindow* window, int key, int scancode, int action, int mods)
 {
     if (action == GLFW_RELEASE) {
         switch (key) {
+            case GLFW_KEY_A:
+                a_pressed=0;
+                //break;
+            case GLFW_KEY_W:
+                w_pressed=0;
+                //break;
+            case GLFW_KEY_S:
+                s_pressed=0;
+                //break;
+            case GLFW_KEY_D:
+                d_pressed=0;
+                //break;
             case GLFW_KEY_C:
-                break;
-            case GLFW_KEY_P:
-                break;
-            case GLFW_KEY_X:
-                // do something ..
+                c_pressed=0;
                 break;
             default:
                 break;
@@ -322,6 +348,21 @@ void keyboard (GLFWwindow* window, int key, int scancode, int action, int mods)
     }
     else if (action == GLFW_PRESS) {
         switch (key) {
+            case GLFW_KEY_A:
+                a_pressed=1;
+                break;
+            case GLFW_KEY_W:
+                w_pressed=1;
+                break;
+            case GLFW_KEY_S:
+                s_pressed=1;
+                break;
+            case GLFW_KEY_D:
+                d_pressed=1;
+                break;
+            case GLFW_KEY_C:
+                c_pressed=1;
+                break;
             case GLFW_KEY_ESCAPE:
                 quit(window);
                 break;
@@ -361,7 +402,11 @@ void mouseButton (GLFWwindow* window, int button, int action, int mods)
         case GLFW_MOUSE_BUTTON_RIGHT:
             if (action == GLFW_RELEASE)
             {
-                break;
+                right_button_Pressed=0;
+            }
+            if(action==GLFW_PRESS)
+            {
+                right_button_Pressed=1;
             }
             break;
         default:
@@ -376,7 +421,8 @@ void reshapeWindow (GLFWwindow* window, int width, int height)
 
 	GLfloat fov = 90.0f;
 	glViewport (0, 0, (GLsizei) fbwidth, (GLsizei) fbheight);
-    Matrices.projection = glm::ortho(0.0f, width*1.0f, 0.0f, height*1.0f, 0.1f, 500.0f);
+    Matrices.projection = glm::ortho((0.0f+camera_zoom)*1.0f, (width-camera_zoom)*1.0f, 0.0f, height*1.0f, 0.1f, 500.0f);
+    cout<<camera_zoom<<endl;
 }
 double distance(double x1,double y1, double x2, double y2)
 {
@@ -417,15 +463,15 @@ void checkcollision()
 {
     double velocity=sqrt(canon_x_velocity*canon_x_velocity+canon_y_velocity*canon_y_velocity);
     if (canon_x_position>=1350-15)
-        set_canon_position(1350-15,canon_y_position,canon_y_velocity,-1*canon_x_velocity,-1,velocity,-1*canon_x_velocity*coefficient_of_collision_with_walls,canon_y_velocity);
+        set_canon_position(1350-15,canon_y_position,canon_y_velocity,-1*canon_x_velocity,-1,velocity,-1*canon_x_velocity*coefficient_of_collision_with_walls,canon_y_velocity*friction);
     if (canon_y_position>=650-15)
-        set_canon_position(canon_x_position,650-15,-1*canon_y_velocity,canon_x_velocity,0,velocity,canon_x_velocity,-1*canon_y_velocity*coefficient_of_collision_with_walls);
+        set_canon_position(canon_x_position,650-15,-1*canon_y_velocity,canon_x_velocity,0,velocity,canon_x_velocity*friction,-1*canon_y_velocity*coefficient_of_collision_with_walls);
     if (canon_y_position<=50 && canon_out==1)
-        set_canon_position(canon_x_position,51,-1*canon_y_velocity,canon_x_velocity,0,velocity,canon_x_velocity,-1*canon_y_velocity*coefficient_of_collision_with_walls);
+        set_canon_position(canon_x_position,51,-1*canon_y_velocity,canon_x_velocity,0,velocity,canon_x_velocity*friction,-1*canon_y_velocity*coefficient_of_collision_with_walls);
     if (canon_x_position<=11+15 && canon_out==1)
-        set_canon_position(26,canon_y_position,canon_y_velocity,-1*canon_x_velocity,1,velocity,-1*canon_x_velocity*coefficient_of_collision_with_walls,canon_y_velocity);
+        set_canon_position(26,canon_y_position,canon_y_velocity,-1*canon_x_velocity,1,velocity,-1*canon_x_velocity*coefficient_of_collision_with_walls,canon_y_velocity*friction);
     double dist=0;
-    for (int i = 0; i < no_of_objects; i++)
+    /*for (int i = 0; i < no_of_objects; i++)
     {
         dist = distance(canon_x_position,canon_y_position,objects[i][0],objects[i][1]);
         if (dist<=10+objects[i][5])
@@ -446,25 +492,25 @@ void checkcollision()
             double x=canon_x_position,y=canon_y_position;
             if (x>objects[i][0] && y>objects[i][1])
             {
-                valx=3;
-                valy=3;
+                valx=4;
+                valy=4;
             }
             else if (x>objects[i][0] && y<objects[i][1])
             {
-                valx=3;
-                valy=-3;
+                valx=4;
+                valy=-4;
             }
             else if (x<objects[i][0] && y>objects[i][1])
             {
-                valx=-3;
-                valy=3;
+                valx=-4;
+                valy=4;
             }
             else if (x<objects[i][0] && y<objects[i][1])
             {
-                valx=-3;
-                valy=-3;
+                valx=-4;
+                valy=-4;
             }
-            set_canon_position(x,y+valy,u2y,u2x,dir,sqrt(u2x*u2x+u2y*u2y),u2x,u2y);
+            set_canon_position(x+valx,y+valy,u2y,u2x,dir,sqrt(u2x*u2x+u2y*u2y),u2x,u2y);
             objects[i][9]=objects[i][0];
             objects[i][10]=objects[i][1];
             if (objects[i][15]==1)
@@ -490,6 +536,57 @@ void checkcollision()
             set_object_position(objects[i][0],50,-1*objects[i][3],objects[i][2],0,velocity1*coefficient_of_collision_with_walls,i);
         if (objects[i][0]<=11+15)
             set_object_position(26,objects[i][1],objects[i][3],-1*objects[i][2],1,velocity1*coefficient_of_collision_with_walls,i);
+    }*/
+    for (int i = 0; i < no_of_fixed_objects;i++)
+    {
+        int in=0;
+        double y=canon_y_position-radius_of_canon-(fixe[i][1]+fixe[i][3]);
+        double x=canon_x_position-fixe[i][0];
+        if (x<=fixe[i][2] &&x>=0)
+        {
+            if(y<=5 && y>=0)
+                set_canon_position(canon_x_position,canon_y_position,-1*canon_y_velocity,canon_x_velocity,0,0,canon_x_velocity*friction,canon_y_velocity*-1*coefficient_of_collision_with_walls);          
+            y=canon_y_position+radius_of_canon-(fixe[i][1]);
+            if (y>=0&&y<=5)
+                set_canon_position(canon_x_position,canon_y_position-10,-1*canon_y_velocity,canon_x_velocity,0,0,canon_x_velocity*friction,canon_y_velocity*-1*coefficient_of_collision_with_walls);                          
+            in=0;
+        }
+        double y1=canon_y_position-radius_of_canon-fixe[i][1];
+        double x1=canon_x_position-radius_of_canon-fixe[i][0]-fixe[i][2];
+        y=canon_y_position+radius_of_canon-fixe[i][1];
+        x=canon_x_position+radius_of_canon-fixe[i][0];
+        if (((y<=fixe[i][3]&&y>=0)||(y1<=fixe[i][3]&&y1>=0)))
+        {
+            if (x>=0&&x<=10)
+                set_canon_position(canon_x_position-6,canon_y_position,canon_y_velocity,-1*canon_x_velocity,1,-1,-1*canon_x_velocity*coefficient_of_collision_with_walls,canon_y_velocity*friction);          
+            if (x1>=0&&x1<=5)
+                set_canon_position(canon_x_position+6,canon_y_position,canon_y_velocity,-1*canon_x_velocity,-1,1,-1*canon_x_velocity*coefficient_of_collision_with_walls,canon_y_velocity*friction);          
+        }
+    }
+    for (int i = 0; i < no_of_coins; ++i)
+    {
+        double dist=distance(canon_x_position,canon_y_position,coins[i][0],coins[i][1]);
+        if (dist<=radius_of_canon+coins[i][2] && coins[i][3]==1)
+        {
+            canon_x_position=0;
+            canon_y_position=0;
+            canon_out=0;
+            coins[i][3]=0;
+            score+=10;
+        }
+    }
+    for (int i = 0; i < no_of_piggy;i++)
+    {
+        double dist=distance(canon_x_position,canon_y_position,piggy_pos[i][0],piggy_pos[i][1]);
+        if (dist<=radius_of_canon+radius_of_piggy && piggy_pos[i][2]!=3)
+        {
+            canon_x_position=0;
+            canon_y_position=0;
+            canon_out=0;
+            piggy_pos[i][2]+=1;
+            score=score+piggy_pos[i][2]*10;
+        }
+        
     }
 }
 void drawobject(VAO* obj,glm::vec3 trans,float angle,glm::vec3 rotat)
@@ -508,13 +605,13 @@ void drawobject(VAO* obj,glm::vec3 trans,float angle,glm::vec3 rotat)
 
 void intialize_objects()
 {
-    for (int i = 0; i < no_of_objects;i++)
+    /*for (int i = 0; i < no_of_objects;i++)
     {
         objects[i][0]=300*(i+1);
         objects[i][1]=500;
         objects[i][2]=0;
         objects[i][3]=0;
-        objects[i][4]=0;
+        objects[i][4]=1;
         objects[i][6]=30;
         objects[i][7]=30;
         objects[i][5]=objects[i][6]/2;
@@ -526,38 +623,67 @@ void intialize_objects()
         objects[i][13]=0;
         objects[i][14]=0;
         objects[i][15]=1;
-        if (i>=3)
-        {
-            objects[i][15]=0;
-            objects[i][0]=400+(i-3)*50;
-            objects[i][1]=425;
-            objects[i][4]=0;
-            objects[i][5]=25;
-            objects[i][9]=objects[i][0];
-            objects[i][10]=objects[i][1];
-        }
-        if (i>=7)
-        {
-            objects[i][15]=0;
-            objects[i][0]=500+(i-3)*50;
-            objects[i][1]=425;
-            objects[i][4]=0;
-            objects[i][5]=25;
-            objects[i][9]=objects[i][0];
-            objects[i][10]=objects[i][1];
-        }
-    }
+    }*/
+    fixe[0][0]=300;
+    fixe[0][1]=400;
+    fixe[0][2]=100;
+    fixe[0][3]=30;
+    fixe[1][0]=400;
+    fixe[1][1]=370;
+    fixe[1][2]=100;
+    fixe[1][3]=30;
+    fixe[2][0]=500;
+    fixe[2][1]=400;
+    fixe[2][2]=100;
+    fixe[2][3]=30;
+    fixe[3][0]=1280;
+    fixe[3][1]=500;
+    fixe[3][2]=70;
+    fixe[3][3]=30;
+    fixe[4][0]=1250;
+    fixe[4][1]=500;
+    fixe[4][2]=30;
+    fixe[4][3]=100;
+    fixe[5][0]=150;
+    fixe[5][1]=500;
+    fixe[5][2]=100;
+    fixe[5][3]=30;
+
+    coins[0][0]=350;
+    coins[0][1]=445;
+    coins[0][2]=15;
+    coins[0][3]=1;
+    coins[1][0]=550;
+    coins[1][1]=445;
+    coins[1][2]=15;
+    coins[1][3]=1;
+
+    piggy_pos[0][0]=450;
+    piggy_pos[0][1]=430;
+    piggy_pos[0][2]=0;
+    piggy_pos[1][0]=1315;
+    piggy_pos[1][1]=560;
+    piggy_pos[1][2]=0;
+    piggy_pos[2][0]=200;
+    piggy_pos[2][1]=560;
+    piggy_pos[2][2]=0;
 }
 
 void background()
 {
     double clr[6][3];
-    bg_circle=createSector(40,360);
     for (int i = 0; i < 6;i++)
     {
-        clr[i][0]=0.533;
-        clr[i][1]=1;
-        clr[i][2]=0.301;
+        clr[i][0]=0;
+        clr[i][1]=0;
+        clr[i][2]=0;
+    }
+    bg_circle=createSector(40,360,clr);
+    for (int i = 0; i < 6;i++)
+    {
+        clr[i][0]=0;
+        clr[i][1]=0.3;
+        clr[i][2]=0;
     }
     bg_ground=createRectangle(1500,200,clr);
     for (int i = 0; i < 6;i++)
@@ -574,25 +700,7 @@ void background()
         clr[i][1]=0;
         clr[i][2]=0;
     }
-    bg_speed=createRectangle(width/3-50,23,clr);
-    walls[0][0]=400;
-    walls[0][1]=400;
-    walls[0][2]=150;
-    walls[0][3]=50;
-    walls[1][0]=700;
-    walls[1][1]=400;
-    walls[1][2]=150;
-    walls[1][3]=50;
-    for (int i = 0; i < 6;i++)
-    {
-        clr[i][0]=1;
-        clr[i][1]=0;
-        clr[i][2]=0;
-    }
-    for (int i = 0; i < no_of_walls;i++)
-    {
-        wall_object[i]=createRectangle(walls[i][2],walls[i][3],clr);
-    }
+    bg_speed=createRectangle(width/3,23,clr);
 }
 void draw()
 {
@@ -603,21 +711,58 @@ void draw()
         clr[i][1]=0;
         clr[i][2]=0;
     }
+    if (w_pressed==1)
+    {
+        angle_c+=5;
+        if (angle_c>=90)
+            angle_c=90;
+    }
+    if (s_pressed==1)
+    {
+        angle_c-=5;
+        if (angle_c<10)
+            angle_c=10;
+    }
+    if (d_pressed==1)
+    {
+        speed_of_canon_intial+=5;
+        if (speed_of_canon_intial>1500)
+            speed_of_canon_intial=1490;
+    }
+    else if (c_pressed==1)
+    {
+        speed_of_canon_intial-=5;
+        if (speed_of_canon_intial<=0)
+            speed_of_canon_intial=0;
+    }
     glClear (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glUseProgram (programID);
-    for (int i = 0; i < no_of_walls; ++i)
-    {
-        drawobject(wall_object[i],glm::vec3(walls[i][0],walls[i][1],0),0,glm::vec3(0,0,1));        
-    }
     drawobject(bg_ground,glm::vec3(0,0,0),0,glm::vec3(0,0,1));
     drawobject(bg_left,glm::vec3(0,0,0),0,glm::vec3(0,0,1));
     drawobject(bg_left,glm::vec3(1351,0,0),0,glm::vec3(0,0,1));
     drawobject(bg_bottom,glm::vec3(0,0,0),0,glm::vec3(0,0,1));
     drawobject(bg_bottom,glm::vec3(0,701,0),0,glm::vec3(0,0,1));
     drawobject(bg_bottom,glm::vec3(0,650,0),0,glm::vec3(0,0,1));
-    drawobject(rectangle,glm::vec3(55,50,0),atan((720-ymousePos)/xmousePos) * 180/M_PI,glm::vec3(0,0,1));
+    for (int i = 0; i <=180;i+=6)
+        drawobject(cloud,glm::vec3(800,550,0),i,glm::vec3(0,0,1));    
+    for (int i = 0; i <=180;i+=6)
+        drawobject(cloud,glm::vec3(860,550,0),i,glm::vec3(0,0,1));    
+    for (int i = 0; i <=180;i+=6)
+        drawobject(cloud,glm::vec3(920,550,0),i,glm::vec3(0,0,1));    
+    for (int i = 0; i <=180;i+=6)
+        drawobject(cloud,glm::vec3(830,555,0),i,glm::vec3(0,0,1));    
+    for (int i = 0; i <=180;i+=6)
+        drawobject(cloud,glm::vec3(880,555,0),i,glm::vec3(0,0,1));    
+    for (int i = 0; i <=180;i+=6)
+        drawobject(cloud,glm::vec3(860,570,0),i,glm::vec3(0,0,1));     
+    if (left_button_Pressed==1)
+        drawobject(rectangle,glm::vec3(55,50,0),atan((720-ymousePos)/xmousePos) * 180/M_PI,glm::vec3(0,0,1));
+    else
+        drawobject(rectangle,glm::vec3(55,50,0),angle_c,glm::vec3(0,0,1));
     drawobject(bg_speed,glm::vec3(18,670,0),0,glm::vec3(0,0,1));
-    speed_rect = createRectangle((xmousePos-55)/3,15,clr);
+    if(left_button_Pressed==1)
+        speed_of_canon_intial=sqrt((xmousePos-55)*(xmousePos-55)+(720-ymousePos)*(720-ymousePos));
+    speed_rect = createRectangle(speed_of_canon_intial/3,15,clr);
     drawobject(speed_rect,glm::vec3(18,674,0),0,glm::vec3(0,0,1));
     for (int i = 0; i < 360; ++i)
       drawobject(circle1,glm::vec3(30,40,0),i,glm::vec3(0,0,1));
@@ -625,7 +770,41 @@ void draw()
       drawobject(circle1,glm::vec3(80,40,0),i,glm::vec3(0,0,1));
     for (int i = 0; i <=180; ++i)
         drawobject(half_circle,glm::vec3(55,50,0),i,glm::vec3(0,0,1));
-    for (int i = 0; i < no_of_objects;i++)
+    for (int i = 0; i < no_of_piggy;i++)
+    {
+        if(piggy_pos[i][2]<=2)
+        {
+            for (int i1 = 0; i1 < 360;i1+=6)
+                drawobject(piggy_ear,glm::vec3(piggy_pos[i][0]-24,piggy_pos[i][1]+15,0),i1,glm::vec3(0,0,1));            
+            for (int i1 = 0; i1 < 360;i1+=6)
+                drawobject(piggy_ear,glm::vec3(piggy_pos[i][0]+24,piggy_pos[i][1]+15,0),i1,glm::vec3(0,0,1));            
+            for (int i1 = 0; i1 < 360;i1+=6)
+                drawobject(piggy_head,glm::vec3(piggy_pos[i][0],piggy_pos[i][1],0),i1,glm::vec3(0,0,1));
+            if (piggy_pos[i][2]>=1)
+                for (int i1 = 0; i1 < 360;i1+=6)
+                    drawobject(piggy_big_eye,glm::vec3(piggy_pos[i][0]-12,piggy_pos[i][1]+12,0),i1,glm::vec3(0,0,1));            
+            if (piggy_pos[i][2]>1)
+                for (int i1 = 0; i1 < 360;i1+=6)
+                    drawobject(piggy_big_eye,glm::vec3(piggy_pos[i][0]+12,piggy_pos[i][1]+12,0),i1,glm::vec3(0,0,1));            
+            for (int i1 = 0; i1 < 360;i1+=6)
+                drawobject(piggy_eye,glm::vec3(piggy_pos[i][0]+12,piggy_pos[i][1]+12,0),i1,glm::vec3(0,0,1));
+            for (int i1 = 0; i1 < 360;i1+=6)
+                drawobject(piggy_eye,glm::vec3(piggy_pos[i][0]-12,piggy_pos[i][1]+12,0),i1,glm::vec3(0,0,1));
+            for (int i1 = 0; i1 < 360;i1+=6)
+                drawobject(piggy_big_nose,glm::vec3(piggy_pos[i][0],piggy_pos[i][1]-8,0),i1,glm::vec3(0,0,1));
+            for (int i1 = 0; i1 < 360;i1+=6)
+                drawobject(piggy_small_nose,glm::vec3(piggy_pos[i][0]-4,piggy_pos[i][1]-8,0),i1,glm::vec3(0,0,1));
+            for (int i1 = 0; i1 < 360;i1+=6)
+                drawobject(piggy_small_nose,glm::vec3(piggy_pos[i][0]+4,piggy_pos[i][1]-8,0),i1,glm::vec3(0,0,1));            
+        }
+    }
+    for (int i = 0; i < no_of_coins;i++)
+        if (coins[i][3]==1)
+            for (int i1 = 0; i1 < 360; ++i1)
+                drawobject(coins_objects[i],glm::vec3(coins[i][0],coins[i][1],0),i1,glm::vec3(0,0,1));
+    for (int i = 0; i < no_of_fixed_objects; ++i)
+        drawobject(fixed_object[i],glm::vec3(fixe[i][0],fixe[i][1],0),0,glm::vec3(0,0,1));
+    /*for (int i = 0; i < no_of_objects;i++)
     {
         if (objects[i][13]==1)
         {
@@ -646,11 +825,18 @@ void draw()
                 drawobject(objects_def[i],glm::vec3(int(objects[i][0]),int(objects[i][1]),0),j,glm::vec3(0,0,1));
         else
             drawobject(objects_def[i],glm::vec3(objects[i][0],objects[i][1],0),0,glm::vec3(0,0,1));
-    }   
-    if (left_button_Pressed==1)
+    } */  
+    if (left_button_Pressed==1 && right_button_Pressed==1)// && canon_out==0)
     {
         double theta = atan((720-ymousePos)/xmousePos);
-        set_canon_position(55+100*cos(theta),50+100*sin(theta),(720-ymousePos),xmousePos,1,(xmousePos-55)/10,((xmousePos-55)/10)*cos(theta),((xmousePos-55)/10)*sin(theta));
+        double v=sqrt((xmousePos-55)*(xmousePos-55)+(720-ymousePos)*(720-ymousePos));
+        set_canon_position(55+100*cos(theta),60+100*sin(theta),(720-ymousePos),xmousePos,1,v/10,(v/10)*cos(theta),(v/10)*sin(theta));
+    }
+    else if (a_pressed==1)// && canon_out==0)
+    {
+        double s=angle_c*M_PI/180;
+        //cout<<angle_c<<"    "<<cos(angle_c)<<"    "<<sin(angle_c)<<endl;
+        set_canon_position(55+100*cos(s),60+100*sin(s),tan(s),1,1,speed_of_canon_intial/10,(speed_of_canon_intial/10)*cos(s),(speed_of_canon_intial/10)*sin(s));        
     }
     if (canon_out==1)
     {
@@ -664,6 +850,14 @@ void draw()
             drawobject(circle1,glm::vec3(canon_x_position,canon_y_position,0),i,glm::vec3(0,0,1));
         canon_y_position=canon_y_initial_position+((canon_velocity*sin(canon_theta))*tim - (9.8*tim*tim)/2)*10;
         canon_x_position=canon_x_initial_position+((canon_velocity*cos(canon_theta))*tim)*10;
+        //cout<<canon_x_velocity<<"   "<<canon_y_velocity<<"  "<<canon_x_position<<" "<<canon_y_position<<endl;
+        if (canon_x_velocity<=1&&canon_x_velocity>=-1&&canon_y_velocity<=1&&canon_y_velocity>=-1)
+            canon_out=0;
+    }
+    if (canon_x_velocity>70)
+    {
+        canon_x_velocity=70;
+        //set_canon_position(canon_x_position,canon_y_position,canon_y_velocity,canon_x_velocity,0,0,canon_x_velocity,canon_y_velocity);
     }
 }
 
@@ -715,18 +909,83 @@ void initGL (GLFWwindow* window, int width, int height)
     for (int i = 0; i < no_of_objects; i++)
     {
         if (objects[i][4]==0)
-            objects_def[i]=createSector(objects[i][5],360);
+            objects_def[i]=createSector(objects[i][5],360,clr);
         else if (objects[i][4]==1)
             objects_def[i]=createRectangle(objects[i][6],objects[i][7],clr);
     }
+    for (int i = 0; i < 6; ++i)
+    {
+        clr[i][0]=1.0;
+        clr[i][1]=0.4;
+        clr[i][2]=0;
+    }
+    for (int i = 0; i < no_of_fixed_objects; ++i)
+        fixed_object[i]=createRectangle(fixe[i][2],fixe[i][3],clr);
+    for (int i = 0; i < 6; ++i)
+    {
+        clr[i][0]=1.0;
+        clr[i][1]=0.83;
+        clr[i][2]=0.2;
+    }
+    for (int i = 0; i < no_of_coins; ++i)
+        coins_objects[i]=createSector(coins[i][2],360,clr);
     programID = LoadShaders( "Sample_GL.vert", "Sample_GL.frag" );
-    circle1=createSector(10,360);
-    circle2=createSector(30,360);
-    half_circle = createSector(40,360);
-    rectangle = createRectangle(100,10,clr);
-	Matrices.MatrixID = glGetUniformLocation(programID, "MVP");
+    circle1=createSector(10,360,clr);
+    circle2=createSector(30,360,clr);
+    for (int i = 0; i < 6; ++i)
+    {
+        clr[i][0]=1;
+        clr[i][1]=1;
+        clr[i][2]=1;
+    }
+    cloud=createSector(30,60,clr);
+    half_circle = createSector(40,360,clr);
+    rectangle = createRectangle(100,20,clr);
+    for (int i = 0; i < 6; ++i)
+    {
+        clr[i][0]=1.0;
+        clr[i][1]=0.4;
+        clr[i][2]=0.6;
+    }
+    piggy_head=createSector(radius_of_piggy,60,clr);
+    for (int i = 0; i < 6; ++i)
+    {
+        clr[i][0]=1;
+        clr[i][1]=1;
+        clr[i][2]=1;
+    }
+    piggy_eye=createSector(5,60,clr);
+    for (int i = 0; i < 6; ++i)
+    {
+        clr[i][0]=0;
+        clr[i][1]=0;
+        clr[i][2]=0;
+    }
+    piggy_big_eye=createSector(7,60,clr);
+    for (int i = 0; i < 6; ++i)
+    {
+        clr[i][0]=0;
+        clr[i][1]=0;
+        clr[i][2]=0;
+    }
+    piggy_big_nose=createSector(10,60,clr);
+	for (int i = 0; i < 6; ++i)
+    {
+        clr[i][0]=1;
+        clr[i][1]=1;
+        clr[i][2]=1;
+    }
+    piggy_small_nose=createSector(3,60,clr);
+    for (int i = 0; i < 6; ++i)
+    {
+        clr[i][0]=1;
+        clr[i][1]=0;
+        clr[i][2]=0.33;
+    }
+    piggy_ear=createSector(8,60,clr);
+    Matrices.MatrixID = glGetUniformLocation(programID, "MVP");
 	reshapeWindow (window, width, height);
-	glClearColor (0.26,0.26,0.26, 0.0f); // R, G, B, A
+	glClearColor (0.701,1,0.898, 0.0f); // R, G, B, A
 	glClearDepth (1.0f);
 	glEnable (GL_DEPTH_TEST);
 	glDepthFunc (GL_LEQUAL);
@@ -751,12 +1010,20 @@ int main (int argc, char** argv)
         glfwSwapBuffers(window);
         glfwPollEvents();
         glfwGetCursorPos(window,&xmousePos,&ymousePos);
+        glfwSetScrollCallback(window, mousescroll);
+        reshapeWindow(window,width,height);
         current_time = glfwGetTime(); // Time in seconds
         if ((current_time - last_update_time) >= 0.4) { // atleast 0.5s elapsed since last frame
             last_update_time = current_time;
         }
-        //cout<<canon_x_position<<"   "<<canon_y_position<<endl;
+        no_of_piggy_hit=0;
+        for (int i = 0; i < no_of_piggy; ++i)
+            if (piggy_pos[i][2]==3)
+                no_of_piggy_hit+=1;
+        if (no_of_piggy_hit==no_of_piggy)
+            quit(window);
     }
+    //cout<<score<<endl;
     glfwTerminate();
     exit(EXIT_SUCCESS);
 }

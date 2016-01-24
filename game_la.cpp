@@ -231,7 +231,7 @@ int left_button_Pressed=0,right_button_Pressed=0,canon_out=0;//canon_out=1 if it
 double canon_x_position=0,canon_y_position=51,canon_start_time=0,canon_velocity=0,canon_theta=0,radius_of_canon=10;
 double canon_x_initial_position=0,canon_y_initial_position=0,canon_x_velocity=0,canon_y_velocity=0;
 int canon_x_direction=1;
-float width=1500,height=720;
+float width=1350,height=720;
 double coefficient_of_collision_with_walls=0.4,e=0.5;//e for collision
 double friction=0.7;
 double objects[100][16];
@@ -638,11 +638,11 @@ void intialize_objects()
     fixe[2][1]=400;
     fixe[2][2]=100;
     fixe[2][3]=30;
-    fixe[3][0]=1280;
+    fixe[3][0]=1265;
     fixe[3][1]=500;
     fixe[3][2]=70;
     fixe[3][3]=30;
-    fixe[4][0]=1250;
+    fixe[4][0]=1235;
     fixe[4][1]=500;
     fixe[4][2]=30;
     fixe[4][3]=100;
@@ -663,7 +663,7 @@ void intialize_objects()
     piggy_pos[0][0]=450;
     piggy_pos[0][1]=430;
     piggy_pos[0][2]=0;
-    piggy_pos[1][0]=1315;
+    piggy_pos[1][0]=1300;
     piggy_pos[1][1]=560;
     piggy_pos[1][2]=0;
     piggy_pos[2][0]=200;
@@ -741,10 +741,10 @@ void draw()
     glUseProgram (programID);
     drawobject(bg_ground,glm::vec3(0,0,0),0,glm::vec3(0,0,1));
     drawobject(bg_left,glm::vec3(0,0,0),0,glm::vec3(0,0,1));
-    drawobject(bg_left,glm::vec3(width,0,0),0,glm::vec3(0,0,1));
+    drawobject(bg_left,glm::vec3(width-15,0,0),0,glm::vec3(0,0,1));
     drawobject(bg_bottom,glm::vec3(0,0,0),0,glm::vec3(0,0,1));
-    drawobject(bg_bottom,glm::vec3(0,height,0),0,glm::vec3(0,0,1));
-    drawobject(bg_bottom,glm::vec3(0,height-50,0),0,glm::vec3(0,0,1));
+    drawobject(bg_bottom,glm::vec3(0,height-18,0),0,glm::vec3(0,0,1));
+    drawobject(bg_bottom,glm::vec3(0,height-60,0),0,glm::vec3(0,0,1));
     for (int i = 0; i <=180;i+=6)
         drawobject(cloud,glm::vec3(800,550,0),i,glm::vec3(0,0,1));    
     for (int i = 0; i <=180;i+=6)
@@ -761,11 +761,11 @@ void draw()
         drawobject(rectangle,glm::vec3(55,50,0),atan((720-ymousePos)/xmousePos) * 180/M_PI,glm::vec3(0,0,1));
     else
         drawobject(rectangle,glm::vec3(55,50,0),angle_c,glm::vec3(0,0,1));
-    drawobject(bg_speed,glm::vec3(18,670,0),0,glm::vec3(0,0,1));
+    drawobject(bg_speed,glm::vec3(18,height-44,0),0,glm::vec3(0,0,1));
     if(left_button_Pressed==1)
         speed_of_canon_intial=sqrt((xmousePos-55)*(xmousePos-55)+(720-ymousePos)*(720-ymousePos));
     speed_rect = createRectangle(speed_of_canon_intial/3,15,clr);
-    drawobject(speed_rect,glm::vec3(18,674,0),0,glm::vec3(0,0,1));
+    drawobject(speed_rect,glm::vec3(18,height-40,0),0,glm::vec3(0,0,1));
     for (int i = 0; i < 360; ++i)
       drawobject(circle1,glm::vec3(30,40,0),i,glm::vec3(0,0,1));
     for (int i = 0; i < 360; ++i)
