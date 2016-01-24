@@ -220,7 +220,7 @@ float D2R(float A)
     return (A*M_PI)/180.0f;
 }
 
-float camera_zoom=0;
+float camera_zoom=1;
 double angle_c=10,speed_of_canon_intial=0;
 int a_pressed=0,w_pressed=0,s_pressed=0,d_pressed=0,c_pressed=0;
 VAO *triangle, *circle1, *circle2, *half_circle, *rectangle, *bg_circle, *bg_ground, *bg_left, *bg_bottom, *speed_rect;
@@ -315,13 +315,16 @@ VAO* createRectangle(double length, double breadth, double clr[6][3])
 void mousescroll(GLFWwindow* window, double xoffset, double yoffset)
 {
     if (yoffset==-1)
-         camera_zoom+=10;
-     if (yoffset==1)
-        camera_zoom-=10;
-    if (camera_zoom>=50)
-        camera_zoom=50;
-    else if (camera_zoom<0)
-        camera_zoom=0;
+         camera_zoom/=1.05;
+    else if (yoffset==1)
+        camera_zoom*=1.05;
+    if (camera_zoom>=1.5)
+        camera_zoom=1.5;
+    if (camera_zoom<1)
+        camera_zoom=1;
+    float diff = width-width/camera_zoom;
+    cout << diff << endl;
+    Matrices.projection = glm::ortho((0.0f+diff)*1.0f, (width-diff)*1.0f, 0.0f, height*1.0f, 0.1f, 500.0f);
 }
 void keyboard (GLFWwindow* window, int key, int scancode, int action, int mods)
 {
@@ -421,8 +424,7 @@ void reshapeWindow (GLFWwindow* window, int width, int height)
 
 	GLfloat fov = 90.0f;
 	glViewport (0, 0, (GLsizei) fbwidth, (GLsizei) fbheight);
-    Matrices.projection = glm::ortho((0.0f+camera_zoom)*1.0f, (width-camera_zoom)*1.0f, 0.0f, height*1.0f, 0.1f, 500.0f);
-    cout<<camera_zoom<<endl;
+    Matrices.projection = glm::ortho((0.0f)*1.0f, width*1.0f, 0.0f, height*1.0f, 0.1f, 500.0f);
 }
 double distance(double x1,double y1, double x2, double y2)
 {
@@ -739,10 +741,10 @@ void draw()
     glUseProgram (programID);
     drawobject(bg_ground,glm::vec3(0,0,0),0,glm::vec3(0,0,1));
     drawobject(bg_left,glm::vec3(0,0,0),0,glm::vec3(0,0,1));
-    drawobject(bg_left,glm::vec3(1351,0,0),0,glm::vec3(0,0,1));
+    drawobject(bg_left,glm::vec3(width,0,0),0,glm::vec3(0,0,1));
     drawobject(bg_bottom,glm::vec3(0,0,0),0,glm::vec3(0,0,1));
-    drawobject(bg_bottom,glm::vec3(0,701,0),0,glm::vec3(0,0,1));
-    drawobject(bg_bottom,glm::vec3(0,650,0),0,glm::vec3(0,0,1));
+    drawobject(bg_bottom,glm::vec3(0,height,0),0,glm::vec3(0,0,1));
+    drawobject(bg_bottom,glm::vec3(0,height-50,0),0,glm::vec3(0,0,1));
     for (int i = 0; i <=180;i+=6)
         drawobject(cloud,glm::vec3(800,550,0),i,glm::vec3(0,0,1));    
     for (int i = 0; i <=180;i+=6)
@@ -1011,7 +1013,7 @@ int main (int argc, char** argv)
         glfwPollEvents();
         glfwGetCursorPos(window,&xmousePos,&ymousePos);
         glfwSetScrollCallback(window, mousescroll);
-        reshapeWindow(window,width,height);
+       // reshapeWindow(window,width,height);
         current_time = glfwGetTime(); // Time in seconds
         if ((current_time - last_update_time) >= 0.4) { // atleast 0.5s elapsed since last frame
             last_update_time = current_time;

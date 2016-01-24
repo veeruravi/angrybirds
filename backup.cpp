@@ -230,11 +230,13 @@ double canon_x_position=0,canon_y_position=51,canon_start_time=0,canon_velocity=
 double canon_x_initial_position=0,canon_y_initial_position=0,canon_x_velocity=0,canon_y_velocity=0;
 int canon_x_direction=1;
 double width=1500,height=720;
-double coefficient_of_collision_with_walls=0.6,e=0.6;//e for collision
-double objects[100][15];
-int no_of_objects=3;//when ever u change this change the below line
-VAO *objects_def[3];
-double r=1;//coefficient_of_collision
+double coefficient_of_collision_with_walls=0.5,e=0.6;//e for collision
+double objects[100][16];
+int no_of_objects=11;//when ever u change this change the below line
+VAO *objects_def[11];
+double r=1; //coefficient_of_collision
+double walls[2][4],no_of_walls=2;//x,y,length,breadth
+VAO *wall_object[2];
                     /*
                         0 x position
                         1 y position
@@ -251,6 +253,7 @@ double r=1;//coefficient_of_collision
                         12 theta
                         13 in motion==1
                         14 x direction
+                        15 immobile==0
                     */
 
 VAO* createSector(float R,int parts)
@@ -381,7 +384,7 @@ double distance(double x1,double y1, double x2, double y2)
     return sqrt(var);
 }
 
-void set_canon_position(double x,double y,double thetay,double thetax,int direction,double velocity)
+void set_canon_position(double x,double y,double thetay,double thetax,int direction,double velocity,double u2x,double u2y)
 {
     if (direction!=0)
         canon_x_direction=direction;
@@ -390,11 +393,11 @@ void set_canon_position(double x,double y,double thetay,double thetax,int direct
     canon_start_time=glfwGetTime();
     canon_x_initial_position=x;
     canon_y_initial_position=y;
-    canon_velocity=velocity;
+    canon_velocity=sqrt(u2x*u2x+u2y*u2y);
     //if (canon_velocity<20)
     //    canon_velocity=20;
-    canon_x_velocity=canon_velocity*cos(canon_theta);
-    canon_y_velocity=canon_velocity*sin(canon_theta);
+    canon_x_velocity=u2x;
+    canon_y_velocity=u2y;
 }
 
 void set_object_position(double x,double y,double thetay,double thetax,int direction,double velocity,int i)
@@ -414,20 +417,20 @@ void checkcollision()
 {
     double velocity=sqrt(canon_x_velocity*canon_x_velocity+canon_y_velocity*canon_y_velocity);
     if (canon_x_position>=1350-15)
-        set_canon_position(1350-15,canon_y_position,canon_y_velocity,-1*canon_x_velocity,-1,velocity*coefficient_of_collision_with_walls);
+        set_canon_position(1350-15,canon_y_position,canon_y_velocity,-1*canon_x_velocity,-1,velocity,-1*canon_x_velocity*coefficient_of_collision_with_walls,canon_y_velocity);
     if (canon_y_position>=650-15)
-        set_canon_position(canon_x_position,650-15,-1*canon_y_velocity,canon_x_velocity,0,velocity*coefficient_of_collision_with_walls);
+        set_canon_position(canon_x_position,650-15,-1*canon_y_velocity,canon_x_velocity,0,velocity,canon_x_velocity,-1*canon_y_velocity*coefficient_of_collision_with_walls);
     if (canon_y_position<=50 && canon_out==1)
-        set_canon_position(canon_x_position,51,-1*canon_y_velocity,canon_x_velocity,0,velocity*coefficient_of_collision_with_walls);
+        set_canon_position(canon_x_position,51,-1*canon_y_velocity,canon_x_velocity,0,velocity,canon_x_velocity,-1*canon_y_velocity*coefficient_of_collision_with_walls);
     if (canon_x_position<=11+15 && canon_out==1)
-        set_canon_position(26,canon_y_position,canon_y_velocity,-1*canon_x_velocity,1,velocity*coefficient_of_collision_with_walls);
+        set_canon_position(26,canon_y_position,canon_y_velocity,-1*canon_x_velocity,1,velocity,-1*canon_x_velocity*coefficient_of_collision_with_walls,canon_y_velocity);
     double dist=0;
     for (int i = 0; i < no_of_objects; i++)
     {
         dist = distance(canon_x_position,canon_y_position,objects[i][0],objects[i][1]);
         if (dist<=10+objects[i][5])
         {
-            double m=objects[i][5]/radius_of_canon;
+            double m=objects[i][5]/(2*radius_of_canon);
             double u1x,u1y,u2x,u2y,v1x,v1y,v2x,v2y;
             u1x = canon_x_velocity;
             u1y = canon_y_velocity;
@@ -443,37 +446,40 @@ void checkcollision()
             double x=canon_x_position,y=canon_y_position;
             if (x>objects[i][0] && y>objects[i][1])
             {
-                valx=2;
-                valy=2;
+                valx=3;
+                valy=3;
             }
             else if (x>objects[i][0] && y<objects[i][1])
             {
-                valx=2;
-                valy=-2;
+                valx=3;
+                valy=-3;
             }
             else if (x<objects[i][0] && y>objects[i][1])
             {
-                valx=-2;
-                valy=2;
+                valx=-3;
+                valy=3;
             }
             else if (x<objects[i][0] && y<objects[i][1])
             {
-                valx=-2;
-                valy=-2;
+                valx=-3;
+                valy=-3;
             }
-            set_canon_position(x+valx,y+valy,u2y,u2x,dir,sqrt(u2x*u2x+u2y*u2y));
+            set_canon_position(x,y+valy,u2y,u2x,dir,sqrt(u2x*u2x+u2y*u2y),u2x,u2y);
             objects[i][9]=objects[i][0];
             objects[i][10]=objects[i][1];
-            objects[i][2] = v2x;
-            objects[i][3] = v2y;
-            if (v2x>0)
-                objects[i][14]=1;
-            else
-                objects[i][14]=-1;
-            objects[i][11] = sqrt(v2x*v2x+v2y*v2y);
-            objects[i][12] = atan2(v2y,v2x);
-            objects[i][8] = glfwGetTime();
-            objects[i][13]=1;
+            if (objects[i][15]==1)
+            {
+                objects[i][2] = v2x;
+                objects[i][3] = v2y;
+                if (v2x>0)
+                    objects[i][14]=1;
+                else
+                    objects[i][14]=-1;
+                objects[i][11] = sqrt(v2x*v2x+v2y*v2y);
+                objects[i][12] = atan2(v2y,v2x);
+                objects[i][8] = glfwGetTime();
+                objects[i][13]=1;
+            }
         }
         double velocity1=sqrt(objects[i][2]*objects[i][2]+objects[i][3]*objects[i][3]);
         if (objects[i][0]>=1350-15)
@@ -484,13 +490,6 @@ void checkcollision()
             set_object_position(objects[i][0],50,-1*objects[i][3],objects[i][2],0,velocity1*coefficient_of_collision_with_walls,i);
         if (objects[i][0]<=11+15)
             set_object_position(26,objects[i][1],objects[i][3],-1*objects[i][2],1,velocity1*coefficient_of_collision_with_walls,i);
-        for (int j = 0; j < no_of_objects; j++)
-        {
-            if (i!=j)
-            {
-                
-            }
-        }        
     }
 }
 void drawobject(VAO* obj,glm::vec3 trans,float angle,glm::vec3 rotat)
@@ -526,6 +525,27 @@ void intialize_objects()
         objects[i][12]=0;
         objects[i][13]=0;
         objects[i][14]=0;
+        objects[i][15]=1;
+        if (i>=3)
+        {
+            objects[i][15]=0;
+            objects[i][0]=400+(i-3)*50;
+            objects[i][1]=425;
+            objects[i][4]=0;
+            objects[i][5]=25;
+            objects[i][9]=objects[i][0];
+            objects[i][10]=objects[i][1];
+        }
+        if (i>=7)
+        {
+            objects[i][15]=0;
+            objects[i][0]=500+(i-3)*50;
+            objects[i][1]=425;
+            objects[i][4]=0;
+            objects[i][5]=25;
+            objects[i][9]=objects[i][0];
+            objects[i][10]=objects[i][1];
+        }
     }
 }
 
@@ -555,6 +575,24 @@ void background()
         clr[i][2]=0;
     }
     bg_speed=createRectangle(width/3-50,23,clr);
+    walls[0][0]=400;
+    walls[0][1]=400;
+    walls[0][2]=150;
+    walls[0][3]=50;
+    walls[1][0]=700;
+    walls[1][1]=400;
+    walls[1][2]=150;
+    walls[1][3]=50;
+    for (int i = 0; i < 6;i++)
+    {
+        clr[i][0]=1;
+        clr[i][1]=0;
+        clr[i][2]=0;
+    }
+    for (int i = 0; i < no_of_walls;i++)
+    {
+        wall_object[i]=createRectangle(walls[i][2],walls[i][3],clr);
+    }
 }
 void draw()
 {
@@ -567,6 +605,10 @@ void draw()
     }
     glClear (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glUseProgram (programID);
+    for (int i = 0; i < no_of_walls; ++i)
+    {
+        drawobject(wall_object[i],glm::vec3(walls[i][0],walls[i][1],0),0,glm::vec3(0,0,1));        
+    }
     drawobject(bg_ground,glm::vec3(0,0,0),0,glm::vec3(0,0,1));
     drawobject(bg_left,glm::vec3(0,0,0),0,glm::vec3(0,0,1));
     drawobject(bg_left,glm::vec3(1351,0,0),0,glm::vec3(0,0,1));
@@ -593,7 +635,7 @@ void draw()
             //objects[i][2]=objects[i][11]*cos(objects[i][12])*objects[i][14];
             objects[i][3]=objects[i][11]*sin(objects[i][12]) - 9.8*tim;
             //cout<<i<<"  "<<objects[i][2]<<endl;
-            cout<<objects[i][1]<<"  "<<objects[i][2]<<endl;
+            //cout<<objects[i][1]<<"  "<<objects[i][2]<<endl;
             if (objects[i][1]<51&&objects[i][2]==0)
             {
                 objects[i][13]=0;
@@ -608,12 +650,16 @@ void draw()
     if (left_button_Pressed==1)
     {
         double theta = atan((720-ymousePos)/xmousePos);
-        set_canon_position(55+100*cos(theta),50+100*sin(theta),(720-ymousePos),xmousePos,1,(xmousePos-55)/10);
+        set_canon_position(55+100*cos(theta),50+100*sin(theta),(720-ymousePos),xmousePos,1,(xmousePos-55)/10,((xmousePos-55)/10)*cos(theta),((xmousePos-55)/10)*sin(theta));
     }
     if (canon_out==1)
     {
         double tim = glfwGetTime() - canon_start_time;
         canon_y_velocity=canon_velocity*sin(canon_theta)-9.8*tim;
+        if (canon_x_velocity<0)
+            canon_x_direction=-1;
+        else
+            canon_x_direction=1;
         for (int i = 0; i < 360; ++i)
             drawobject(circle1,glm::vec3(canon_x_position,canon_y_position,0),i,glm::vec3(0,0,1));
         canon_y_position=canon_y_initial_position+((canon_velocity*sin(canon_theta))*tim - (9.8*tim*tim)/2)*10;
