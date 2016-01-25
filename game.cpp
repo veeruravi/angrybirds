@@ -1011,7 +1011,7 @@ int main (int argc, char** argv)
         glfwPollEvents();
         glfwGetCursorPos(window,&xmousePos,&ymousePos);
         glfwSetScrollCallback(window, mousescroll);
-        reshapeWindow(window,width,height);
+        //reshapeWindow(window,width,height);
         current_time = glfwGetTime(); // Time in seconds
         if ((current_time - last_update_time) >= 0.4) { // atleast 0.5s elapsed since last frame
             last_update_time = current_time;

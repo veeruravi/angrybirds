@@ -220,6 +220,9 @@ float D2R(float A)
     return (A*M_PI)/180.0f;
 }
 
+double xmousePos1=0,xmousePos2=0,ymousePos1=0,ymousePos2=0;;
+int in1=0;
+float screen_shift=0,screen_shift_y=0;
 float camera_zoom=1;
 double angle_c=10,speed_of_canon_intial=0;
 int a_pressed=0,w_pressed=0,s_pressed=0,d_pressed=0,c_pressed=0;
@@ -318,13 +321,13 @@ void mousescroll(GLFWwindow* window, double xoffset, double yoffset)
          camera_zoom/=1.05;
     else if (yoffset==1)
         camera_zoom*=1.05;
-    if (camera_zoom>=1.5)
-        camera_zoom=1.5;
+    if (camera_zoom>=1.2)
+        camera_zoom=1.2;
     if (camera_zoom<1)
         camera_zoom=1;
     float diff = width-width/camera_zoom;
-    cout << diff << endl;
-    Matrices.projection = glm::ortho((0.0f+diff)*1.0f, (width-diff)*1.0f, 0.0f, height*1.0f, 0.1f, 500.0f);
+    //cout << screen_shift << endl;
+    Matrices.projection = glm::ortho((0.0f+diff+screen_shift)*1.0f, (width-diff+screen_shift)*1.0f, (0.0f+diff)*1.0f, (height-diff)*1.0f, 0.1f, 500.0f);
 }
 void keyboard (GLFWwindow* window, int key, int scancode, int action, int mods)
 {
@@ -728,8 +731,8 @@ void draw()
     if (d_pressed==1)
     {
         speed_of_canon_intial+=5;
-        if (speed_of_canon_intial>1500)
-            speed_of_canon_intial=1490;
+        if (speed_of_canon_intial>width)
+            speed_of_canon_intial=width;
     }
     else if (c_pressed==1)
     {
@@ -757,13 +760,40 @@ void draw()
         drawobject(cloud,glm::vec3(880,555,0),i,glm::vec3(0,0,1));    
     for (int i = 0; i <=180;i+=6)
         drawobject(cloud,glm::vec3(860,570,0),i,glm::vec3(0,0,1));     
-    if (left_button_Pressed==1)
+    if (right_button_Pressed==1)
         drawobject(rectangle,glm::vec3(55,50,0),atan((720-ymousePos)/xmousePos) * 180/M_PI,glm::vec3(0,0,1));
     else
         drawobject(rectangle,glm::vec3(55,50,0),angle_c,glm::vec3(0,0,1));
     drawobject(bg_speed,glm::vec3(18,height-44,0),0,glm::vec3(0,0,1));
-    if(left_button_Pressed==1)
+    if(left_button_Pressed==0&&right_button_Pressed==1)
+    {
+        if(in1==0)
+        {
+            xmousePos1=xmousePos;
+            ymousePos1=ymousePos;
+            in1=1;
+        }
         speed_of_canon_intial=sqrt((xmousePos-55)*(xmousePos-55)+(720-ymousePos)*(720-ymousePos));
+        if (speed_of_canon_intial>=width)
+            speed_of_canon_intial=width;
+    }
+    if (left_button_Pressed==0&&in1==1)
+    {
+        xmousePos2=xmousePos;
+        ymousePos2=ymousePos;
+        in1=0;
+        screen_shift+=xmousePos1-xmousePos2;
+        screen_shift_y=ymousePos1-ymousePos2;
+        if (xmousePos2==xmousePos1&&ymousePos2==ymousePos1)
+        {
+            screen_shift=0;
+            screen_shift_y==0;
+            camera_zoom=1;
+        }
+        cout<<screen_shift<<"   "<<screen_shift_y<<endl;
+        float diff = width-width/camera_zoom;
+        Matrices.projection = glm::ortho((0.0f+diff+screen_shift)*1.0f, (width-diff+screen_shift)*1.0f, (0.0f+diff-screen_shift_y)*1.0f, (height-diff-screen_shift_y)*1.0f, 0.1f, 500.0f);
+    }
     speed_rect = createRectangle(speed_of_canon_intial/3,15,clr);
     drawobject(speed_rect,glm::vec3(18,height-40,0),0,glm::vec3(0,0,1));
     for (int i = 0; i < 360; ++i)
@@ -776,27 +806,27 @@ void draw()
     {
         if(piggy_pos[i][2]<=2)
         {
-            for (int i1 = 0; i1 < 360;i1+=6)
+            for (int i1 = 0; i1 < 360;i1+=60)
                 drawobject(piggy_ear,glm::vec3(piggy_pos[i][0]-24,piggy_pos[i][1]+15,0),i1,glm::vec3(0,0,1));            
-            for (int i1 = 0; i1 < 360;i1+=6)
+            for (int i1 = 0; i1 < 360;i1+=60)
                 drawobject(piggy_ear,glm::vec3(piggy_pos[i][0]+24,piggy_pos[i][1]+15,0),i1,glm::vec3(0,0,1));            
-            for (int i1 = 0; i1 < 360;i1+=6)
+            for (int i1 = 0; i1 < 360;i1+=60)
                 drawobject(piggy_head,glm::vec3(piggy_pos[i][0],piggy_pos[i][1],0),i1,glm::vec3(0,0,1));
             if (piggy_pos[i][2]>=1)
-                for (int i1 = 0; i1 < 360;i1+=6)
+                for (int i1 = 0; i1 < 360;i1+=60)
                     drawobject(piggy_big_eye,glm::vec3(piggy_pos[i][0]-12,piggy_pos[i][1]+12,0),i1,glm::vec3(0,0,1));            
             if (piggy_pos[i][2]>1)
-                for (int i1 = 0; i1 < 360;i1+=6)
+                for (int i1 = 0; i1 < 360;i1+=60)
                     drawobject(piggy_big_eye,glm::vec3(piggy_pos[i][0]+12,piggy_pos[i][1]+12,0),i1,glm::vec3(0,0,1));            
-            for (int i1 = 0; i1 < 360;i1+=6)
+            for (int i1 = 0; i1 < 360;i1+=60)
                 drawobject(piggy_eye,glm::vec3(piggy_pos[i][0]+12,piggy_pos[i][1]+12,0),i1,glm::vec3(0,0,1));
-            for (int i1 = 0; i1 < 360;i1+=6)
+            for (int i1 = 0; i1 < 360;i1+=60)
                 drawobject(piggy_eye,glm::vec3(piggy_pos[i][0]-12,piggy_pos[i][1]+12,0),i1,glm::vec3(0,0,1));
-            for (int i1 = 0; i1 < 360;i1+=6)
+            for (int i1 = 0; i1 < 360;i1+=60)
                 drawobject(piggy_big_nose,glm::vec3(piggy_pos[i][0],piggy_pos[i][1]-8,0),i1,glm::vec3(0,0,1));
-            for (int i1 = 0; i1 < 360;i1+=6)
+            for (int i1 = 0; i1 < 360;i1+=60)
                 drawobject(piggy_small_nose,glm::vec3(piggy_pos[i][0]-4,piggy_pos[i][1]-8,0),i1,glm::vec3(0,0,1));
-            for (int i1 = 0; i1 < 360;i1+=6)
+            for (int i1 = 0; i1 < 360;i1+=60)
                 drawobject(piggy_small_nose,glm::vec3(piggy_pos[i][0]+4,piggy_pos[i][1]-8,0),i1,glm::vec3(0,0,1));            
         }
     }
@@ -949,42 +979,42 @@ void initGL (GLFWwindow* window, int width, int height)
         clr[i][1]=0.4;
         clr[i][2]=0.6;
     }
-    piggy_head=createSector(radius_of_piggy,60,clr);
+    piggy_head=createSector(radius_of_piggy,6,clr);
     for (int i = 0; i < 6; ++i)
     {
         clr[i][0]=1;
         clr[i][1]=1;
         clr[i][2]=1;
     }
-    piggy_eye=createSector(5,60,clr);
+    piggy_eye=createSector(5,6,clr);
     for (int i = 0; i < 6; ++i)
     {
         clr[i][0]=0;
         clr[i][1]=0;
         clr[i][2]=0;
     }
-    piggy_big_eye=createSector(7,60,clr);
+    piggy_big_eye=createSector(7,6,clr);
     for (int i = 0; i < 6; ++i)
     {
         clr[i][0]=0;
         clr[i][1]=0;
         clr[i][2]=0;
     }
-    piggy_big_nose=createSector(10,60,clr);
+    piggy_big_nose=createSector(10,6,clr);
 	for (int i = 0; i < 6; ++i)
     {
         clr[i][0]=1;
         clr[i][1]=1;
         clr[i][2]=1;
     }
-    piggy_small_nose=createSector(3,60,clr);
+    piggy_small_nose=createSector(3,6,clr);
     for (int i = 0; i < 6; ++i)
     {
         clr[i][0]=1;
         clr[i][1]=0;
         clr[i][2]=0.33;
     }
-    piggy_ear=createSector(8,60,clr);
+    piggy_ear=createSector(8,6,clr);
     Matrices.MatrixID = glGetUniformLocation(programID, "MVP");
 	reshapeWindow (window, width, height);
 	glClearColor (0.701,1,0.898, 0.0f); // R, G, B, A
@@ -1007,11 +1037,11 @@ int main (int argc, char** argv)
     double last_update_time = glfwGetTime(), current_time;
     while (!glfwWindowShouldClose(window)) 
     {
+        glfwGetCursorPos(window,&xmousePos,&ymousePos);
         draw();
         checkcollision();
         glfwSwapBuffers(window);
         glfwPollEvents();
-        glfwGetCursorPos(window,&xmousePos,&ymousePos);
         glfwSetScrollCallback(window, mousescroll);
        // reshapeWindow(window,width,height);
         current_time = glfwGetTime(); // Time in seconds
