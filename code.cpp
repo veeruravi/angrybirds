@@ -3,26 +3,28 @@
 #include <fstream>
 #include <vector>
 
-#include <glad/glad.h>
-#include <GLFW/glfw3.h>
-
 #define GLM_FORCE_RADIANS
 #include <glm/glm.hpp>
 #include <glm/gtx/transform.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include <math.h>
 
+#include <glad/glad.h>
+#include <FTGL/ftgl.h>
+#include <GLFW/glfw3.h>
+#include <SOIL/SOIL.h>
 
 using namespace std;
 
 struct VAO {
-    GLuint VertexArrayID;
-    GLuint VertexBuffer;
-    GLuint ColorBuffer;
+	GLuint VertexArrayID;
+	GLuint VertexBuffer;
+	GLuint ColorBuffer;
+	GLuint TextureBuffer;
+	GLuint TextureID;
 
-    GLenum PrimitiveMode;
-    GLenum FillMode;
-    int NumVertices;
+	GLenum PrimitiveMode; // GL_POINTS, GL_LINE_STRIP, GL_LINE_LOOP, GL_LINES, GL_LINE_STRIP_ADJACENCY, GL_LINES_ADJACENCY, GL_TRIANGLE_STRIP, GL_TRIANGLE_FAN, GL_TRIANGLES, GL_TRIANGLE_STRIP_ADJACENCY and GL_TRIANGLES_ADJACENCY
+	GLenum FillMode; // GL_FILL, GL_LINE
+	int NumVertices;
 };
 typedef struct VAO VAO;
 
@@ -30,10 +32,17 @@ struct GLMatrices {
 	glm::mat4 projection;
 	glm::mat4 model;
 	glm::mat4 view;
-	GLuint MatrixID;
+	GLuint MatrixID; // For use with normal shader
+	GLuint TexMatrixID; // For use with texture shader
 } Matrices;
 
-GLuint programID;
+struct FTGLFont {
+	FTFont* font;
+	GLuint fontMatrixID;
+	GLuint fontColorID;
+} GL3Font;
+
+GLuint programID, fontProgramID, textureProgramID;
 
 /* Function to load Shaders - Use it as it is */
 GLuint LoadShaders(const char * vertex_file_path,const char * fragment_file_path) {
@@ -67,7 +76,7 @@ GLuint LoadShaders(const char * vertex_file_path,const char * fragment_file_path
 	int InfoLogLength;
 
 	// Compile Vertex Shader
-	printf("Compiling shader : %s\n", vertex_file_path);
+	cout << "Compiling shader : " <<  vertex_file_path << endl;
 	char const * VertexSourcePointer = VertexShaderCode.c_str();
 	glShaderSource(VertexShaderID, 1, &VertexSourcePointer , NULL);
 	glCompileShader(VertexShaderID);
@@ -75,12 +84,12 @@ GLuint LoadShaders(const char * vertex_file_path,const char * fragment_file_path
 	// Check Vertex Shader
 	glGetShaderiv(VertexShaderID, GL_COMPILE_STATUS, &Result);
 	glGetShaderiv(VertexShaderID, GL_INFO_LOG_LENGTH, &InfoLogLength);
-	std::vector<char> VertexShaderErrorMessage(InfoLogLength);
+	std::vector<char> VertexShaderErrorMessage( max(InfoLogLength, int(1)) );
 	glGetShaderInfoLog(VertexShaderID, InfoLogLength, NULL, &VertexShaderErrorMessage[0]);
-	fprintf(stdout, "%s\n", &VertexShaderErrorMessage[0]);
+	cout << VertexShaderErrorMessage.data() << endl;
 
 	// Compile Fragment Shader
-	printf("Compiling shader : %s\n", fragment_file_path);
+	cout << "Compiling shader : " << fragment_file_path << endl;
 	char const * FragmentSourcePointer = FragmentShaderCode.c_str();
 	glShaderSource(FragmentShaderID, 1, &FragmentSourcePointer , NULL);
 	glCompileShader(FragmentShaderID);
@@ -88,12 +97,12 @@ GLuint LoadShaders(const char * vertex_file_path,const char * fragment_file_path
 	// Check Fragment Shader
 	glGetShaderiv(FragmentShaderID, GL_COMPILE_STATUS, &Result);
 	glGetShaderiv(FragmentShaderID, GL_INFO_LOG_LENGTH, &InfoLogLength);
-	std::vector<char> FragmentShaderErrorMessage(InfoLogLength);
+	std::vector<char> FragmentShaderErrorMessage( max(InfoLogLength, int(1)) );
 	glGetShaderInfoLog(FragmentShaderID, InfoLogLength, NULL, &FragmentShaderErrorMessage[0]);
-	fprintf(stdout, "%s\n", &FragmentShaderErrorMessage[0]);
+	cout << FragmentShaderErrorMessage.data() << endl;
 
 	// Link the program
-	fprintf(stdout, "Linking program\n");
+	cout << "Linking program" << endl;
 	GLuint ProgramID = glCreateProgram();
 	glAttachShader(ProgramID, VertexShaderID);
 	glAttachShader(ProgramID, FragmentShaderID);
@@ -104,7 +113,7 @@ GLuint LoadShaders(const char * vertex_file_path,const char * fragment_file_path
 	glGetProgramiv(ProgramID, GL_INFO_LOG_LENGTH, &InfoLogLength);
 	std::vector<char> ProgramErrorMessage( max(InfoLogLength, int(1)) );
 	glGetProgramInfoLog(ProgramID, InfoLogLength, NULL, &ProgramErrorMessage[0]);
-	fprintf(stdout, "%s\n", &ProgramErrorMessage[0]);
+	cout << ProgramErrorMessage.data() << endl;
 
 	glDeleteShader(VertexShaderID);
 	glDeleteShader(FragmentShaderID);
@@ -114,99 +123,211 @@ GLuint LoadShaders(const char * vertex_file_path,const char * fragment_file_path
 
 static void error_callback(int error, const char* description)
 {
-    fprintf(stderr, "Error: %s\n", description);
+	cout << "Error: " << description << endl;
 }
 
 void quit(GLFWwindow *window)
 {
-    glfwDestroyWindow(window);
-    glfwTerminate();
-    exit(EXIT_SUCCESS);
+	glfwDestroyWindow(window);
+	glfwTerminate();
+	exit(EXIT_SUCCESS);
 }
 
+glm::vec3 getRGBfromHue (int hue)
+{
+	float intp;
+	float fracp = modff(hue/60.0, &intp);
+	float x = 1.0 - abs((float)((int)intp%2)+fracp-1.0);
+
+	if (hue < 60)
+		return glm::vec3(1,x,0);
+	else if (hue < 120)
+		return glm::vec3(x,1,0);
+	else if (hue < 180)
+		return glm::vec3(0,1,x);
+	else if (hue < 240)
+		return glm::vec3(0,x,1);
+	else if (hue < 300)
+		return glm::vec3(x,0,1);
+	else
+		return glm::vec3(1,0,x);
+}
 
 /* Generate VAO, VBOs and return VAO handle */
 struct VAO* create3DObject (GLenum primitive_mode, int numVertices, const GLfloat* vertex_buffer_data, const GLfloat* color_buffer_data, GLenum fill_mode=GL_FILL)
 {
-    struct VAO* vao = new struct VAO;
-    vao->PrimitiveMode = primitive_mode;
-    vao->NumVertices = numVertices;
-    vao->FillMode = fill_mode;
+	struct VAO* vao = new struct VAO;
+	vao->PrimitiveMode = primitive_mode;
+	vao->NumVertices = numVertices;
+	vao->FillMode = fill_mode;
 
-    // Create Vertex Array Object
-    // Should be done after CreateWindow and before any other GL calls
-    glGenVertexArrays(1, &(vao->VertexArrayID)); // VAO
-    glGenBuffers (1, &(vao->VertexBuffer)); // VBO - vertices
-    glGenBuffers (1, &(vao->ColorBuffer));  // VBO - colors
+	// Create Vertex Array Object
+	// Should be done after CreateWindow and before any other GL calls
+	glGenVertexArrays(1, &(vao->VertexArrayID)); // VAO
+	glGenBuffers (1, &(vao->VertexBuffer)); // VBO - vertices
+	glGenBuffers (1, &(vao->ColorBuffer));  // VBO - colors
 
-    glBindVertexArray (vao->VertexArrayID); // Bind the VAO 
-    glBindBuffer (GL_ARRAY_BUFFER, vao->VertexBuffer); // Bind the VBO vertices 
-    glBufferData (GL_ARRAY_BUFFER, 3*numVertices*sizeof(GLfloat), vertex_buffer_data, GL_STATIC_DRAW); // Copy the vertices into VBO
-    glVertexAttribPointer(
-                          0,                  // attribute 0. Vertices
-                          3,                  // size (x,y,z)
-                          GL_FLOAT,           // type
-                          GL_FALSE,           // normalized?
-                          0,                  // stride
-                          (void*)0            // array buffer offset
-                          );
+	glBindVertexArray (vao->VertexArrayID); // Bind the VAO
+	glBindBuffer (GL_ARRAY_BUFFER, vao->VertexBuffer); // Bind the VBO vertices
+	glBufferData (GL_ARRAY_BUFFER, 3*numVertices*sizeof(GLfloat), vertex_buffer_data, GL_STATIC_DRAW); // Copy the vertices into VBO
+	glVertexAttribPointer(
+						  0,                  // attribute 0. Vertices
+						  3,                  // size (x,y,z)
+						  GL_FLOAT,           // type
+						  GL_FALSE,           // normalized?
+						  0,                  // stride
+						  (void*)0            // array buffer offset
+						  );
 
-    glBindBuffer (GL_ARRAY_BUFFER, vao->ColorBuffer); // Bind the VBO colors 
-    glBufferData (GL_ARRAY_BUFFER, 3*numVertices*sizeof(GLfloat), color_buffer_data, GL_STATIC_DRAW);  // Copy the vertex colors
-    glVertexAttribPointer(
-                          1,                  // attribute 1. Color
-                          3,                  // size (r,g,b)
-                          GL_FLOAT,           // type
-                          GL_FALSE,           // normalized?
-                          0,                  // stride
-                          (void*)0            // array buffer offset
-                          );
+	glBindBuffer (GL_ARRAY_BUFFER, vao->ColorBuffer); // Bind the VBO colors
+	glBufferData (GL_ARRAY_BUFFER, 3*numVertices*sizeof(GLfloat), color_buffer_data, GL_STATIC_DRAW);  // Copy the vertex colors
+	glVertexAttribPointer(
+						  1,                  // attribute 1. Color
+						  3,                  // size (r,g,b)
+						  GL_FLOAT,           // type
+						  GL_FALSE,           // normalized?
+						  0,                  // stride
+						  (void*)0            // array buffer offset
+						  );
 
-    return vao;
+	return vao;
 }
 
 /* Generate VAO, VBOs and return VAO handle - Common Color for all vertices */
 struct VAO* create3DObject (GLenum primitive_mode, int numVertices, const GLfloat* vertex_buffer_data, const GLfloat red, const GLfloat green, const GLfloat blue, GLenum fill_mode=GL_FILL)
 {
-    GLfloat* color_buffer_data = new GLfloat [3*numVertices];
-    for (int i=0; i<numVertices; i++) {
-        color_buffer_data [3*i] = red;
-        color_buffer_data [3*i + 1] = green;
-        color_buffer_data [3*i + 2] = blue;
-    }
+	GLfloat* color_buffer_data = new GLfloat [3*numVertices];
+	for (int i=0; i<numVertices; i++) {
+		color_buffer_data [3*i] = red;
+		color_buffer_data [3*i + 1] = green;
+		color_buffer_data [3*i + 2] = blue;
+	}
 
-    return create3DObject(primitive_mode, numVertices, vertex_buffer_data, color_buffer_data, fill_mode);
+	return create3DObject(primitive_mode, numVertices, vertex_buffer_data, color_buffer_data, fill_mode);
+}
+
+struct VAO* create3DTexturedObject (GLenum primitive_mode, int numVertices, const GLfloat* vertex_buffer_data, const GLfloat* texture_buffer_data, GLuint textureID, GLenum fill_mode=GL_FILL)
+{
+	struct VAO* vao = new struct VAO;
+	vao->PrimitiveMode = primitive_mode;
+	vao->NumVertices = numVertices;
+	vao->FillMode = fill_mode;
+	vao->TextureID = textureID;
+
+	// Create Vertex Array Object
+	// Should be done after CreateWindow and before any other GL calls
+	glGenVertexArrays(1, &(vao->VertexArrayID)); // VAO
+	glGenBuffers (1, &(vao->VertexBuffer)); // VBO - vertices
+	glGenBuffers (1, &(vao->TextureBuffer));  // VBO - textures
+
+	glBindVertexArray (vao->VertexArrayID); // Bind the VAO
+	glBindBuffer (GL_ARRAY_BUFFER, vao->VertexBuffer); // Bind the VBO vertices
+	glBufferData (GL_ARRAY_BUFFER, 3*numVertices*sizeof(GLfloat), vertex_buffer_data, GL_STATIC_DRAW); // Copy the vertices into VBO
+	glVertexAttribPointer(
+						  0,                  // attribute 0. Vertices
+						  3,                  // size (x,y,z)
+						  GL_FLOAT,           // type
+						  GL_FALSE,           // normalized?
+						  0,                  // stride
+						  (void*)0            // array buffer offset
+						  );
+
+	glBindBuffer (GL_ARRAY_BUFFER, vao->TextureBuffer); // Bind the VBO textures
+	glBufferData (GL_ARRAY_BUFFER, 2*numVertices*sizeof(GLfloat), texture_buffer_data, GL_STATIC_DRAW);  // Copy the vertex colors
+	glVertexAttribPointer(
+						  2,                  // attribute 2. Textures
+						  2,                  // size (s,t)
+						  GL_FLOAT,           // type
+						  GL_FALSE,           // normalized?
+						  0,                  // stride
+						  (void*)0            // array buffer offset
+						  );
+
+	return vao;
 }
 
 /* Render the VBOs handled by VAO */
 void draw3DObject (struct VAO* vao)
 {
-    // Change the Fill Mode for this object
-    glPolygonMode (GL_FRONT_AND_BACK, vao->FillMode);
+	// Change the Fill Mode for this object
+	glPolygonMode (GL_FRONT_AND_BACK, vao->FillMode);
 
-    // Bind the VAO to use
-    glBindVertexArray (vao->VertexArrayID);
+	// Bind the VAO to use
+	glBindVertexArray (vao->VertexArrayID);
 
-    // Enable Vertex Attribute 0 - 3d Vertices
-    glEnableVertexAttribArray(0);
-    // Bind the VBO to use
-    glBindBuffer(GL_ARRAY_BUFFER, vao->VertexBuffer);
+	// Enable Vertex Attribute 0 - 3d Vertices
+	glEnableVertexAttribArray(0);
+	// Bind the VBO to use
+	glBindBuffer(GL_ARRAY_BUFFER, vao->VertexBuffer);
 
-    // Enable Vertex Attribute 1 - Color
-    glEnableVertexAttribArray(1);
-    // Bind the VBO to use
-    glBindBuffer(GL_ARRAY_BUFFER, vao->ColorBuffer);
+	// Enable Vertex Attribute 1 - Color
+	glEnableVertexAttribArray(1);
+	// Bind the VBO to use
+	glBindBuffer(GL_ARRAY_BUFFER, vao->ColorBuffer);
 
-    // Draw the geometry !
-    glDrawArrays(vao->PrimitiveMode, 0, vao->NumVertices); // Starting from vertex 0; 3 vertices total -> 1 triangle
+	// Draw the geometry !
+	glDrawArrays(vao->PrimitiveMode, 0, vao->NumVertices); // Starting from vertex 0; 3 vertices total -> 1 triangle
+}
+
+void draw3DTexturedObject (struct VAO* vao)
+{
+	// Change the Fill Mode for this object
+	glPolygonMode (GL_FRONT_AND_BACK, vao->FillMode);
+
+	// Bind the VAO to use
+	glBindVertexArray (vao->VertexArrayID);
+
+	// Enable Vertex Attribute 0 - 3d Vertices
+	glEnableVertexAttribArray(0);
+	// Bind the VBO to use
+	glBindBuffer(GL_ARRAY_BUFFER, vao->VertexBuffer);
+
+	// Bind Textures using texture units
+	glBindTexture(GL_TEXTURE_2D, vao->TextureID);
+
+	// Enable Vertex Attribute 2 - Texture
+	glEnableVertexAttribArray(2);
+	// Bind the VBO to use
+	glBindBuffer(GL_ARRAY_BUFFER, vao->TextureBuffer);
+
+	// Draw the geometry !
+	glDrawArrays(vao->PrimitiveMode, 0, vao->NumVertices); // Starting from vertex 0; 3 vertices total -> 1 triangle
+
+	// Unbind Textures to be safe
+	glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+/* Create an OpenGL Texture from an image */
+GLuint createTexture (const char* filename)
+{
+	GLuint TextureID;
+	// Generate Texture Buffer
+	glGenTextures(1, &TextureID);
+	// All upcoming GL_TEXTURE_2D operations now have effect on our texture buffer
+	glBindTexture(GL_TEXTURE_2D, TextureID);
+	// Set our texture parameters
+	// Set texture wrapping to GL_REPEAT
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	// Set texture filtering (interpolation)
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+	// Load image and create OpenGL texture
+	int twidth, theight;
+	unsigned char* image = SOIL_load_image(filename, &twidth, &theight, 0, SOIL_LOAD_RGB);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, twidth, theight, 0, GL_RGB, GL_UNSIGNED_BYTE, image);
+	glGenerateMipmap(GL_TEXTURE_2D); // Generate MipMaps to use
+	SOIL_free_image_data(image); // Free the data read from file after creating opengl texture
+	glBindTexture(GL_TEXTURE_2D, 0); // Unbind texture when done, so we won't accidentily mess it up
+
+	return TextureID;
 }
 
 
-
-                                  /**************************
-                                   * Customizable functions *
-                                   **************************/
-
+/**************************
+ * Customizable functions *
+ **************************/
 float formatAngle(float A)
 {
     if(A<0.0f)
@@ -220,7 +341,7 @@ float D2R(float A)
     return (A*M_PI)/180.0f;
 }
 
-double gravity=18,air_friction=1;//-0.000005;
+double gravity=18,air_friction=1-0.000005;
 double xmousePos1=0,xmousePos2=0,ymousePos1=0,ymousePos2=0;;
 int in1=0;
 float screen_shift=0,screen_shift_y=0;
@@ -250,6 +371,7 @@ double r=1; //coefficient_of_collision
 VAO *piggy_head,*piggy_eye,*piggy_ear,*piggy_big_nose,*piggy_small_nose,*piggy_big_eye,*cloud;
 VAO *score_ver,*score_hor;
 double a[10][7];
+int no_of_collisions_allowed=6;
 void intialize_a()
 {
     a[0][0]=1;a[0][1]=1;a[0][2]=1;a[0][3]=1;a[0][4]=1;a[0][5]=1;a[0][6]=0;
@@ -457,10 +579,12 @@ void set_canon_position(double x,double y,double thetay,double thetax,int direct
     if (direction!=0)
         canon_x_direction=direction;
     canon_theta = atan2(thetay,thetax) ;
-    canon_out = 1;
+    //canon_out = 1;
     canon_start_time=glfwGetTime();
     canon_x_initial_position=x;
     canon_y_initial_position=y;
+    canon_x_position=x;
+    canon_y_position=y;
     canon_velocity=sqrt(u2x*u2x+u2y*u2y);
     //if (canon_velocity<20)
     //    canon_velocity=20;
@@ -489,17 +613,17 @@ void checkcollision()
     double velocity=sqrt(canon_x_velocity*canon_x_velocity+canon_y_velocity*canon_y_velocity);
     if (canon_x_position>=1350-15)
         set_canon_position(1350-15,canon_y_position,canon_y_velocity,-1*canon_x_velocity,-1,velocity,-1*canon_x_velocity*coefficient_of_collision_with_walls,canon_y_velocity*friction);
-    if (canon_y_position>=650-15)
-        set_canon_position(canon_x_position,650-15,-1*canon_y_velocity,canon_x_velocity,0,velocity,canon_x_velocity*friction,-1*canon_y_velocity*coefficient_of_collision_with_walls);
-    if (canon_y_position<=50 && canon_out==1)
-        set_canon_position(canon_x_position,51,-1*canon_y_velocity,canon_x_velocity,0,velocity,canon_x_velocity*friction,-1*canon_y_velocity*coefficient_of_collision_with_walls);
+    if (canon_y_position+radius_of_canon>=650)
+        set_canon_position(canon_x_position,650-radius_of_canon,-1*canon_y_velocity,canon_x_velocity,0,velocity,canon_x_velocity*friction,-1*canon_y_velocity*coefficient_of_collision_with_walls);
+    if (canon_y_position<=50)
+        set_canon_position(canon_x_position,50,-1*canon_y_velocity,canon_x_velocity,0,velocity,canon_x_velocity*friction,-1*canon_y_velocity*coefficient_of_collision_with_walls);
     if (canon_x_position<=11+15 && canon_out==1)
         set_canon_position(26,canon_y_position,canon_y_velocity,-1*canon_x_velocity,1,velocity,-1*canon_x_velocity*coefficient_of_collision_with_walls,canon_y_velocity*friction);
     double dist=0;
     for (int i = 0; i < no_of_objects; i++)
     {
         dist = distance(canon_x_position,canon_y_position,objects[i][0],objects[i][1]);
-        if (dist<=10+objects[i][5])
+        if (dist<=10+objects[i][5]&&objects[i][16]<=no_of_collisions_allowed)
         {
             double m=objects[i][5]/(2*radius_of_canon);
             double u1x,u1y,u2x,u2y,v1x,v1y,v2x,v2y;
@@ -557,14 +681,14 @@ void checkcollision()
             }
         }
         double velocity1=sqrt(objects[i][2]*objects[i][2]+objects[i][3]*objects[i][3]);
-        if (objects[i][0]+objects[i][5]>=1350-15)
-            set_object_position(1350-15-objects[i][5],objects[i][1],objects[i][3],-1*objects[i][2],-1,velocity1*coefficient_of_collision_with_walls,-1*objects[i][2]*coefficient_of_collision_with_walls,objects[i][3]*friction,i);
-        if (objects[i][1]+objects[i][5]>=650-15)
-            set_object_position(objects[i][0],650-15-objects[i][5],-1*objects[i][3],objects[i][2],0,velocity1*coefficient_of_collision_with_walls,objects[i][2]*friction,objects[i][3]*-1*coefficient_of_collision_with_walls,i);
-        if (objects[i][1]-objects[i][5]<50)
-            set_object_position(objects[i][0],50+objects[i][5],-1*objects[i][3],objects[i][2],0,velocity1*coefficient_of_collision_with_walls,objects[i][2]*friction,-1*objects[i][3]*coefficient_of_collision_with_walls,i);
-        if (objects[i][0]-objects[i][5]<=11+15)
-            set_object_position(26+objects[i][5],objects[i][1],objects[i][3],-1*objects[i][2],1,velocity1*coefficient_of_collision_with_walls,-1*objects[i][2]*coefficient_of_collision_with_walls,objects[i][3]*friction,i);
+        if (objects[i][0]>=1350-15)
+            set_object_position(1350-15,objects[i][1],objects[i][3],-1*objects[i][2],-1,velocity1*coefficient_of_collision_with_walls,-1*objects[i][2]*coefficient_of_collision_with_walls,objects[i][3]*friction,i);
+        if (objects[i][1]>=650-15)
+            set_object_position(objects[i][0],650-20,-1*objects[i][3],objects[i][2],0,velocity1*coefficient_of_collision_with_walls,objects[i][2]*friction,objects[i][3]*-1*coefficient_of_collision_with_walls,i);
+        if (objects[i][1]<50)
+            set_object_position(objects[i][0],50,-1*objects[i][3],objects[i][2],0,velocity1*coefficient_of_collision_with_walls,objects[i][2]*friction,-1*objects[i][3]*coefficient_of_collision_with_walls,i);
+        if (objects[i][0]<=11+15)
+            set_object_position(26,objects[i][1],objects[i][3],-1*objects[i][2],1,velocity1*coefficient_of_collision_with_walls,-1*objects[i][2]*coefficient_of_collision_with_walls,objects[i][3]*friction,i);
         for (int i1 = 0; i1 < no_of_objects;i1++)
         {
             if (i!=i1)
@@ -649,11 +773,11 @@ void checkcollision()
     {
         int in=0;
         double y=canon_y_position-radius_of_canon-(fixe[i][1]+fixe[i][3]);
-        double x=canon_x_position-fixe[i][0];
+        double x=canon_x_position-radius_of_canon-fixe[i][0];
         if (x<=fixe[i][2] &&x>=0)
         {
-            if(y<=10 && y>=0)
-                set_canon_position(canon_x_position,canon_y_position+10,-1*canon_y_velocity,canon_x_velocity,0,0,canon_x_velocity*friction,canon_y_velocity*-1*coefficient_of_collision_with_walls);          
+            if(y<=5 && y>=0)
+                set_canon_position(canon_x_position,canon_y_position,-1*canon_y_velocity,canon_x_velocity,0,0,canon_x_velocity*friction,canon_y_velocity*-1*coefficient_of_collision_with_walls);          
             y=canon_y_position+radius_of_canon-(fixe[i][1]);
             if (y>=0&&y<=10)
                 set_canon_position(canon_x_position,canon_y_position-10,-1*canon_y_velocity,canon_x_velocity,0,0,canon_x_velocity*friction,canon_y_velocity*-1*coefficient_of_collision_with_walls);                          
@@ -676,6 +800,7 @@ void checkcollision()
         double dist=distance(canon_x_position,canon_y_position,coins[i][0],coins[i][1]);
         if (dist<=radius_of_canon+coins[i][2] && coins[i][3]==1)
         {
+        	set_canon_position(0,0,0,1,1,0,0,0);
             canon_x_position=0;
             canon_y_position=0;
             canon_out=0;
@@ -688,6 +813,7 @@ void checkcollision()
         double dist=distance(canon_x_position,canon_y_position,piggy_pos[i][0],piggy_pos[i][1]);
         if (dist<=radius_of_canon+radius_of_piggy && piggy_pos[i][2]!=3)
         {
+        	set_canon_position(0,0,0,1,1,0,0,0);
             canon_x_position=0;
             canon_y_position=0;
             canon_out=0;
@@ -810,7 +936,163 @@ void background()
     }
     bg_speed=createRectangle(width/3,23,clr);
 }
+/*
+void draw ()
+{
+	// clear the color and depth in the frame buffer
+	glClear (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+	// use the loaded shader program
+	// Don't change unless you know what you are doing
+	glUseProgram (programID);
+
+	// Eye - Location of camera. Don't change unless you are sure!!
+	glm::vec3 eye ( 5*cos(camera_rotation_angle*M_PI/180.0f), 0, 5*sin(camera_rotation_angle*M_PI/180.0f) );
+	// Target - Where is the camera looking at.  Don't change unless you are sure!!
+	glm::vec3 target (0, 0, 0);
+	// Up - Up vector defines tilt of camera.  Don't change unless you are sure!!
+	glm::vec3 up (0, 1, 0);
+
+	// Compute Camera matrix (view)
+	// Matrices.view = glm::lookAt( eye, target, up ); // Rotating Camera for 3D
+	//  Don't change unless you are sure!!
+	static float c = 0;
+	c++;
+	Matrices.view = glm::lookAt(glm::vec3(0,0,3), glm::vec3(0,0,0), glm::vec3(sinf(c*M_PI/180.0),3*cosf(c*M_PI/180.0),0)); // Fixed camera for 2D (ortho) in XY plane
+
+	// Compute ViewProject matrix as view/camera might not be changed for this frame (basic scenario)
+	//  Don't change unless you are sure!!
+	glm::mat4 VP = Matrices.projection * Matrices.view;
+
+	// Send our transformation to the currently bound shader, in the "MVP" uniform
+	// For each model you render, since the MVP will be different (at least the M part)
+	//  Don't change unless you are sure!!
+	glm::mat4 MVP;	// MVP = Projection * View * Model
+
+	// Load identity to model matrix
+	Matrices.model = glm::mat4(1.0f);
+
+	/* Render your scene */
+	/*
+	glm::mat4 translateTriangle = glm::translate (glm::vec3(-2.0f, 0.0f, 0.0f)); // glTranslatef
+	glm::mat4 rotateTriangle = glm::rotate((float)(triangle_rotation*M_PI/180.0f), glm::vec3(0,0,1));  // rotate about vector (1,0,0)
+	glm::mat4 triangleTransform = translateTriangle * rotateTriangle;
+	Matrices.model *= triangleTransform;
+	MVP = VP * Matrices.model; // MVP = p * V * M
+
+	//  Don't change unless you are sure!!
+	// Copy MVP to normal shaders
+	glUniformMatrix4fv(Matrices.MatrixID, 1, GL_FALSE, &MVP[0][0]);
+
+	// draw3DObject draws the VAO given to it using current MVP matrix
+	draw3DObject(triangle);
+
+
+
+	// Render with texture shaders now
+	glUseProgram(textureProgramID);
+
+	// Pop matrix to undo transformations till last push matrix instead of recomputing model matrix
+	// glPopMatrix ();
+	Matrices.model = glm::mat4(1.0f);
+
+	glm::mat4 translateRectangle = glm::translate (glm::vec3(2, 0, 0));        // glTranslatef
+	glm::mat4 rotateRectangle = glm::rotate((float)(rectangle_rotation*M_PI/180.0f), glm::vec3(0,0,1)); // rotate about vector (-1,1,1)
+	Matrices.model *= (translateRectangle * rotateRectangle);
+	MVP = VP * Matrices.model;
+
+	// Copy MVP to texture shaders
+	glUniformMatrix4fv(Matrices.TexMatrixID, 1, GL_FALSE, &MVP[0][0]);
+
+	// Set the texture sampler to access Texture0 memory
+	glUniform1i(glGetUniformLocation(textureProgramID, "texSampler"), 0);
+
+	// draw3DObject draws the VAO given to it using current MVP matrix
+	draw3DTexturedObject(rectangle);
+
+	// Increment angles
+	float increments = 1;
+
+	// Render font on screen
+	static int fontScale = 0;
+	float fontScaleValue = 0.75 + 0.25*sinf(fontScale*M_PI/180.0f);
+	glm::vec3 fontColor = getRGBfromHue (fontScale);
+
+
+
+	// Use font Shaders for next part of code
+	glUseProgram(fontProgramID);
+	Matrices.view = glm::lookAt(glm::vec3(0,0,3), glm::vec3(0,0,0), glm::vec3(0,1,0)); // Fixed camera for 2D (ortho) in XY plane
+
+	// Transform the text
+	Matrices.model = glm::mat4(1.0f);
+	glm::mat4 translateText = glm::translate(glm::vec3(-3,2,0));
+	glm::mat4 scaleText = glm::scale(glm::vec3(,,));
+	Matrices.model *= (translateText * scaleText);
+	MVP = Matrices.projection * Matrices.view * Matrices.model;
+	// send font's MVP and font color to fond shaders
+	glUniformMatrix4fv(GL3Font.fontMatrixID, 1, GL_FALSE, &MVP[0][0]);
+	glUniform3fv(GL3Font.fontColorID, 1, &fontColor[0]);
+
+	// Render font
+	GL3Font.font->Render("Round n Round we go !!");
+
+
+	//camera_rotation_angle++; // Simulating camera rotation
+	triangle_rotation = triangle_rotation + increments*triangle_rot_dir*triangle_rot_status;
+	rectangle_rotation = rectangle_rotation + increments*rectangle_rot_dir*rectangle_rot_status;
+
+	// font size and color changes
+	fontScale = (fontScale + 1) % 360;
+}*/
+
+/* Initialise glfw window, I/O callbacks and the renderer to use */
+/* Nothing to Edit here */
+GLFWwindow* initGLFW (int width, int height)
+{
+	GLFWwindow* window; // window desciptor/handle
+
+	glfwSetErrorCallback(error_callback);
+	if (!glfwInit()) {
+		exit(EXIT_FAILURE);
+	}
+
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
+	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+	window = glfwCreateWindow(width, height, "Sample OpenGL 3.3 Application", NULL, NULL);
+
+	if (!window) {
+		glfwTerminate();
+		exit(EXIT_FAILURE);
+	}
+
+	glfwMakeContextCurrent(window);
+	gladLoadGLLoader((GLADloadproc) glfwGetProcAddress);
+	glfwSwapInterval( 1 );
+
+	/* --- register callbacks with GLFW --- */
+
+	/* Register function to handle window resizes */
+	/* With Retina display on Mac OS X GLFW's FramebufferSize
+	 is different from WindowSize */
+	glfwSetFramebufferSizeCallback(window, reshapeWindow);
+	glfwSetWindowSizeCallback(window, reshapeWindow);
+
+	/* Register function to handle window close */
+	glfwSetWindowCloseCallback(window, quit);
+
+	/* Register function to handle keyboard input */
+	glfwSetKeyCallback(window, keyboard);      // general keyboard input
+	glfwSetCharCallback(window, keyboardChar);  // simpler specific character handling
+
+	/* Register function to handle mouse click */
+	glfwSetMouseButtonCallback(window, mouseButton);  // mouse button clicks
+
+	return window;
+}
 void draw()
 {
     set_canon_position(canon_x_position,canon_y_position,canon_y_velocity*air_friction,canon_x_velocity*air_friction,0,0,canon_x_velocity*air_friction,canon_y_velocity*air_friction);
@@ -960,7 +1242,7 @@ void draw()
                 objects[i][13]=0;
             }
         }
-        if (objects[i][16]<=6)
+        if (objects[i][16]<=no_of_collisions_allowed)
         {
             if (objects[i][4]==0)
                 for (int j = 0; j < 360; ++j)
@@ -971,6 +1253,7 @@ void draw()
     }
     if (left_button_Pressed==1 && right_button_Pressed==1)// && canon_out==0)
     {
+    	canon_out=1;
         double theta = atan((720-ymousePos)/xmousePos);
         double v=sqrt((xmousePos-55)*(xmousePos-55)+(720-ymousePos)*(720-ymousePos));
         set_canon_position(55+100*cos(theta),60+100*sin(theta),(720-ymousePos),xmousePos,1,v/10,(v/10)*cos(theta),(v/10)*sin(theta));
@@ -981,7 +1264,7 @@ void draw()
         //cout<<angle_c<<"    "<<cos(angle_c)<<"    "<<sin(angle_c)<<endl;
         set_canon_position(55+100*cos(s),60+100*sin(s),tan(s),1,1,speed_of_canon_intial/10,(speed_of_canon_intial/10)*cos(s),(speed_of_canon_intial/10)*sin(s));        
     }
-    if (canon_out==1)
+    if(canon_out==1)
     {
         double tim = glfwGetTime() - canon_start_time;
         canon_y_velocity=canon_velocity*sin(canon_theta)-gravity*tim;
@@ -993,9 +1276,11 @@ void draw()
             drawobject(circle1,glm::vec3(canon_x_position,canon_y_position,0),i,glm::vec3(0,0,1));
         canon_y_position=canon_y_initial_position+((canon_velocity*sin(canon_theta))*tim - (gravity*tim*tim)/2)*10;
         canon_x_position=canon_x_initial_position+((canon_velocity*cos(canon_theta))*tim)*10;
-        //cout<<canon_x_velocity<<"   "<<canon_y_velocity<<"  "<<canon_x_position<<" "<<canon_y_position<<endl;
-        if (canon_x_velocity<=1&&canon_x_velocity>=-1&&canon_y_velocity<=1&&canon_y_velocity>=-1)
+        if (canon_x_velocity<=1 && canon_x_velocity>=-1 && canon_y_velocity<=1 && canon_y_velocity>=-1)
+        {
+        	//cout<<"hello"<<"		"<<canon_x_velocity<<" 			  "<<canon_y_velocity<<endl;//"  "<<canon_x_position<<" "<<canon_y_position<<endl;
             canon_out=0;
+        }
     }
     if (canon_x_velocity>70)
     {
@@ -1024,44 +1309,92 @@ void draw()
         score1/=10;
         x_cor-=25;
     }
+    glm::vec3 fontColor = glm::vec3(0,0,0);
+	glUseProgram(fontProgramID);
+	Matrices.view = glm::lookAt(glm::vec3(0,0,3), glm::vec3(0,0,0), glm::vec3(0,1,0)); // Fixed camera for 2D (ortho) in XY plane
+	glm::mat4 MVP;
+	// Transform the text
+	Matrices.model = glm::mat4(1.0f);
+	glm::mat4 translateText = glm::translate(glm::vec3(width*8/11,height*16/17,0));
+	glm::mat4 scaleText = glm::scale(glm::vec3(50,50,50));
+	Matrices.model *= (translateText * scaleText);
+	MVP = Matrices.projection * Matrices.view * Matrices.model;
+	// send font's MVP and font color to fond shaders
+	glUniformMatrix4fv(GL3Font.fontMatrixID, 1, GL_FALSE, &MVP[0][0]);
+	glUniform3fv(GL3Font.fontColorID, 1, &fontColor[0]);
+
+	// Render font
+	GL3Font.font->Render("SCORE:");
 }
 
-GLFWwindow* initGLFW (int width, int height)
-{
-    GLFWwindow* window;
-
-    glfwSetErrorCallback(error_callback);
-    if (!glfwInit()) {
-        exit(EXIT_FAILURE);
-    }
-
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-
-    window = glfwCreateWindow(width, height, "Sample OpenGL 3.3 Application", NULL, NULL);
-
-    if (!window) {
-        glfwTerminate();
-        exit(EXIT_FAILURE);
-    }
-
-    glfwMakeContextCurrent(window);
-    gladLoadGLLoader((GLADloadproc) glfwGetProcAddress);
-    glfwSwapInterval( 1 );
-    glfwSetFramebufferSizeCallback(window, reshapeWindow);
-    glfwSetWindowSizeCallback(window, reshapeWindow);
-    glfwSetWindowCloseCallback(window, quit);
-    glfwSetKeyCallback(window, keyboard);      // general keyboard input
-    glfwSetCharCallback(window, keyboardChar);  // simpler specific character handling
-    glfwSetMouseButtonCallback(window, mouseButton);  // mouse button clicks
-    return window;
-}
-
+/* Initialize the OpenGL rendering properties */
+/* Add all the models to be created here */
 void initGL (GLFWwindow* window, int width, int height)
 {
-    intialize_a();
+	// Load Textures
+	// Enable Texture0 as current texture memory
+	glActiveTexture(GL_TEXTURE0);
+	// load an image file directly as a new OpenGL texture
+	// GLuint texID = SOIL_load_OGL_texture ("beach.png", SOIL_LOAD_AUTO, SOIL_CREATE_NEW_ID, SOIL_FLAG_TEXTURE_REPEATS); // Buggy for OpenGL3
+	GLuint textureID = createTexture("beach2.png");
+	// check for an error during the load process
+	if(textureID == 0 )
+		cout << "SOIL loading error: '" << SOIL_last_result() << "'" << endl;
+
+	// Create and compile our GLSL program from the texture shaders
+	textureProgramID = LoadShaders( "TextureRender.vert", "TextureRender.frag" );
+	// Get a handle for our "MVP" uniform
+	Matrices.TexMatrixID = glGetUniformLocation(textureProgramID, "MVP");
+
+
+	/* Objects should be created before any other gl function and shaders */
+	// Create the models
+
+
+	// Create and compile our GLSL program from the shaders
+	programID = LoadShaders( "Sample_GL3.vert", "Sample_GL3.frag" );
+	// Get a handle for our "MVP" uniform
+	Matrices.MatrixID = glGetUniformLocation(programID, "MVP");
+
+
+	reshapeWindow (window, width, height);
+
+	// Background color of the scene
+	glClearColor (0.701,1,0.898, 0.0f); // R, G, B, A
+	glClearDepth (1.0f);
+
+	glEnable (GL_DEPTH_TEST);
+	glDepthFunc (GL_LEQUAL);
+	//glEnable(GL_BLEND);
+	//glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+	// Initialise FTGL stuff
+	const char* fontfile = "arial.ttf";
+	GL3Font.font = new FTExtrudeFont(fontfile); // 3D extrude style rendering
+
+	if(GL3Font.font->Error())
+	{
+		cout << "Error: Could not load font `" << fontfile << "'" << endl;
+		glfwTerminate();
+		exit(EXIT_FAILURE);
+	}
+
+	// Create and compile our GLSL program from the font shaders
+	fontProgramID = LoadShaders( "fontrender.vert", "fontrender.frag" );
+	GLint fontVertexCoordAttrib, fontVertexNormalAttrib, fontVertexOffsetUniform;
+	fontVertexCoordAttrib = glGetAttribLocation(fontProgramID, "vertexPosition");
+	fontVertexNormalAttrib = glGetAttribLocation(fontProgramID, "vertexNormal");
+	fontVertexOffsetUniform = glGetUniformLocation(fontProgramID, "pen");
+	GL3Font.fontMatrixID = glGetUniformLocation(fontProgramID, "MVP");
+	GL3Font.fontColorID = glGetUniformLocation(fontProgramID, "fontColor");
+
+	GL3Font.font->ShaderLocations(fontVertexCoordAttrib, fontVertexNormalAttrib, fontVertexOffsetUniform);
+	GL3Font.font->FaceSize(1);
+	GL3Font.font->Depth(0);
+	GL3Font.font->Outset(0, 0);
+	GL3Font.font->CharMap(ft_encoding_unicode);
+
+	intialize_a();
     background();
     double clr[6][3];
     for (int i = 0; i < 6; ++i)
@@ -1095,7 +1428,7 @@ void initGL (GLFWwindow* window, int width, int height)
     }
     for (int i = 0; i < no_of_coins; ++i)
         coins_objects[i]=createSector(coins[i][2],360,clr);
-    programID = LoadShaders( "Sample_GL.vert", "Sample_GL.frag" );
+    //programID = LoadShaders( "Sample_GL.vert", "Sample_GL.frag" );
     circle1=createSector(10,360,clr);
     circle2=createSector(30,360,clr);
     for (int i = 0; i < 6; ++i)
@@ -1157,16 +1490,12 @@ void initGL (GLFWwindow* window, int width, int height)
     }
     score_ver=createRectangle(4,18,clr);
     score_hor=createRectangle(18,4,clr);
-    Matrices.MatrixID = glGetUniformLocation(programID, "MVP");
-	reshapeWindow (window, width, height);
-	glClearColor (0.701,1,0.898, 0.0f); // R, G, B, A
-	glClearDepth (1.0f);
-	glEnable (GL_DEPTH_TEST);
-	glDepthFunc (GL_LEQUAL);
-    cout << "VENDOR: " << glGetString(GL_VENDOR) << endl;
-    cout << "RENDERER: " << glGetString(GL_RENDERER) << endl;
-    cout << "VERSION: " << glGetString(GL_VERSION) << endl;
-    cout << "GLSL: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << endl;
+
+	cout << "VENDOR: " << glGetString(GL_VENDOR) << endl;
+	cout << "RENDERER: " << glGetString(GL_RENDERER) << endl;
+	cout << "VERSION: " << glGetString(GL_VERSION) << endl;
+	cout << "GLSL: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << endl;
+
 }
 
 int main (int argc, char** argv)
